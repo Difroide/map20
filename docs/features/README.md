@@ -17,38 +17,25 @@ Cada documento segue o [template padrao](TEMPLATE.md). Consulte o [glossario](GL
 ### Fundamentos
 | Doc | Descricao |
 |-----|-----------|
-| [Autenticacao e Autorizacao](01-auth/auth-and-authorization.md) | Login, JWT, guards, roles, RLS |
-| [Onboarding](01-auth/onboarding.md) | Wizard de configuracao inicial |
-| [Workspaces](02-workspaces/workspaces.md) | Areas de trabalho, isolamento de dados |
+| [Autenticacao e Autorizacao](01-auth/auth-and-authorization.md) | Login, JWT, guards, RLS |
+| [Workspaces](02-workspaces/workspaces.md) | Containers (areas): cada um com snippet, pixel, webhooks e preview |
 
-### Core — Visualizacao de Dados
+### Preview e debug
 | Doc | Descricao |
 |-----|-----------|
-| [Dashboard e Metricas](03-dashboard/dashboard-and-metrics.md) | Painel principal com ROAS, CPA, graficos |
-| [Campanhas](04-campaigns/campaigns-overview.md) | Listagem de campanhas com metricas |
-| [Conjuntos de Anuncios](04-campaigns/ad-sets.md) | Ad sets com orcamento e metricas |
-| [Anuncios](04-campaigns/ads.md) | Anuncios individuais e performance |
+| [Modo preview](20-preview/preview-debug.md) | Debug web (navegador) e server (requisicoes, tags, HTTP de saida, console), no estilo do GTM |
 
-### Core — Dados de Vendas
+### Rastreio e API de Conversoes
 | Doc | Descricao |
 |-----|-----------|
-| [Vendas](05-sales/sales.md) | Listagem, filtros, detalhes de vendas |
-| [Atribuicao de Vendas](05-sales/sale-attribution.md) | Logica de matching UTM → anuncio |
-| [Rastreio de Visitantes](18-visitor-tracking/visitor-tracking.md) | Snippet da pagina de vendas, funil, jornada do comprador |
+| [Rastreio de Visitantes](18-visitor-tracking/visitor-tracking.md) | Snippet da pagina de vendas, indexador, casamento com a venda |
 | [API de Conversoes do Meta](18-visitor-tracking/meta-capi.md) | PageView, InitiateCheckout e Purchase pelo servidor, no subdominio do cliente |
-| [Testes A/B](19-ab-tests/ab-tests.md) | Variantes da pagina de vendas sorteadas pelo snippet e medidas pela venda que volta pelo indexador |
-
-### Core — Financeiro
-| Doc | Descricao |
-|-----|-----------|
-| [Financeiro](06-financial/financial.md) | DRE mensal, despesas, receitas, lucro |
 
 ### Integracoes
 | Doc | Descricao |
 |-----|-----------|
 | [Visao Geral](07-integrations/integrations-overview.md) | Pagina de integracoes e como funciona |
-| [Conexao Facebook](07-integrations/facebook-connection.md) | Configuracao de conta de anuncios |
-| [Integracoes de Checkout](07-integrations/checkout-integrations.md) | 9 plataformas de pagamento |
+| [Integracoes de Checkout](07-integrations/checkout-integrations.md) | Webhooks das plataformas de pagamento |
 
 ### Webhooks (por plataforma)
 | Doc | Descricao |
@@ -71,22 +58,9 @@ Cada documento segue o [template padrao](TEMPLATE.md). Consulte o [glossario](GL
 | [Monetizze](08-webhook-processing/monetizze.md) | Regras especificas Monetizze (codigos de status numericos) |
 | [Greenn](08-webhook-processing/greenn.md) | Regras especificas Greenn (UTMs em saleMetas) |
 
-### Sincronizacao
-| Doc | Descricao |
-|-----|-----------|
-| [Sync Facebook Ads](09-facebook-sync/facebook-ads-sync.md) | Auto-sync, insights, rematch |
-
 ### Configuracoes
 | Doc | Descricao |
 |-----|-----------|
-| [Configuracoes](10-settings/settings.md) | Perfil, seguranca, plano, custos |
-| [Planos e Limites](11-plans-and-limits/plan-rules.md) | Tiers, feature gates, limites |
-
-### Administracao
-| Doc | Descricao |
-|-----|-----------|
-| [Dashboard Admin](12-admin/admin-dashboard.md) | Estatisticas do sistema |
-| [Gestao de Usuarios](12-admin/admin-users.md) | CRUD de usuarios |
-| [Detalhe do Usuario](12-admin/admin-user-detail.md) | Visao individual + metricas |
-| [Gestao de Planos](12-admin/admin-plans.md) | Edicao de regras de planos |
-| [Impersonacao](12-admin/admin-impersonation.md) | Visualizar como outro usuario |
+| [Configuracoes](10-settings/settings.md) | Conta, aparencia, usuarios |
+| [Aparencia](11-appearance/README.md) | Tema claro/escuro |
+| [Logs no Discord](13-discord-logs/DISCORD_LOGS.md) | Avisos de venda e erro |

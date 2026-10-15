@@ -224,15 +224,6 @@ export class MonetizzeProcessor {
 
     const sale = await this.salesService.upsertFromWebhook(saleData);
 
-    if (sale?.id) {
-      this.webhooksService.matchAndUpdateSale(sale.id, userId, {
-        adId,
-        utmCampaign,
-        utmContent,
-        utmTerm: null,
-      });
-    }
-
     this.discordLogger.logSale('monetizze', {
       amount,
       customerName: comprador.nome || null,

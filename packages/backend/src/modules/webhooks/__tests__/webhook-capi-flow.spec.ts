@@ -21,12 +21,7 @@ describe('webhook → venda → Purchase', () => {
 
   function salesService() {
     const persisted: any[] = [];
-    const svc = new SalesService(
-      {} as any,
-      { checkSaleAcceptance: jest.fn().mockResolvedValue({ allowed: true, overage: false }), invalidate: jest.fn() } as any,
-      {} as any,
-      { matchSale: jest.fn() } as any,
-    );
+    const svc = new SalesService({} as any, { matchSale: jest.fn() } as any);
     jest.spyOn(svc as any, 'findByExternalId').mockResolvedValue(null);
     jest.spyOn(svc as any, 'persist').mockImplementation(async (sale: any) => {
       persisted.push(sale);

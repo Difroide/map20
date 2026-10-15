@@ -2,16 +2,17 @@ import { Body, Controller, Get, Logger, Post, Query, Req, Res } from '@nestjs/co
 import { SkipThrottle } from '@nestjs/throttler';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { TrackingIngestService } from './tracking-ingest.service';
-import { CollectBatch, isBot, parseCollectBody } from './collect-payload';
+import { CollectBatch, CollectEvent, isBot, parseCollectBody, peekCollectBody } from './collect-payload';
 import { buildTrackerScript, NOOP_TRACKER_SCRIPT } from './tracker-script';
 import { MetaCapiService, WebEventInput } from '../meta-capi/meta-capi.service';
-import { AbTestsService } from '../ab-tests/ab-tests.service';
+import { DebugService } from '../debug/debug.service';
+import { debugContext, DebugTrace } from '../debug/debug-context';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HOST = /^[a-z0-9.-]+(:\d{1,5})?$/i;
 
-/** Limite do /collect por IP. Uma visita manda de 2 a 5 requisições. */
-const COLLECT_LIMIT_PER_MINUTE = 100;
+/** Limite do /collect por IP. Uma visita manda de 2 a 5 requisições; o preview, bem mais. */
+const COLLECT_LIMIT_PER_MINUTE = 300;
 const RATE_WINDOW_MS = 60_000;
 
 const YEAR_S = 365 * 24 * 3600;
@@ -88,7 +89,7 @@ export class TrackingCollectController {
   constructor(
     private readonly ingestService: TrackingIngestService,
     private readonly capi: MetaCapiService,
-    private readonly abTests: AbTestsService,
+    private readonly debug: DebugService,
   ) {}
 
   @Get('tracker.js')
@@ -112,20 +113,14 @@ export class TrackingCollectController {
       return;
     }
 
-    // Os testes A/B rodando vão dentro do script. getScriptTests nunca lança:
-    // sem teste, o script sai igual ao de sempre.
-    const abTests = await this.abTests.getScriptTests(workspaceId);
-
     // Cache curto: trocar a plataforma em Integrações muda o parâmetro do
-    // indexador, e a página do cliente precisa pegar isso logo. O mesmo vale
-    // para iniciar ou pausar um teste A/B.
+    // indexador, e a página do cliente precisa pegar isso logo.
     res.header('Cache-Control', 'public, max-age=300');
     res.status(200).send(
       buildTrackerScript(workspaceId, this.collectUrl(req), {
         param: config?.param ?? 'sck',
         pixelId: config?.pixelId ?? null,
         xcodUtm: config?.platform === 'hotmart',
-        abTests,
       }),
     );
   }
@@ -134,6 +129,9 @@ export class TrackingCollectController {
    * Recebe o lote do snippet, grava e manda PageView/InitiateCheckout para a
    * CAPI. Sempre 200 e corpo vazio: sendBeacon ignora a resposta, e um erro
    * não daria ao navegador do visitante nada a fazer.
+   *
+   * Tudo roda dentro de um rastro de debug: com a área em preview, o painel
+   * mostra a requisição, as variáveis, as tags e o que saiu para o Meta.
    */
   @Post('collect')
   async collect(
@@ -144,41 +142,118 @@ export class TrackingCollectController {
     res.header('Access-Control-Allow-Origin', '*');
     const headers = req.headers as Headers;
     const ip = clientIp(req);
+    const peek = peekCollectBody(body);
+    const trace = new DebugTrace('collect', 'Web — snippet', {
+      method: 'POST',
+      path: '/api/t/collect',
+      query: (req.query as Record<string, unknown>) ?? {},
+      headers: { ...headers, 'x-client-ip': ip },
+      body,
+    });
+    trace.setWorkspace(peek.workspaceId);
+    trace.browserToken = peek.debugToken;
 
-    try {
-      if (!this.allow(ip ?? 'unknown')) {
-        res.status(200).send();
-        return;
+    await debugContext.run(trace, async () => {
+      try {
+        await this.handleCollect(body, req, res, headers, ip, trace);
+      } catch (error: any) {
+        this.logger.error(`Erro no collect: ${error?.message}`, error?.stack);
       }
-
-      const userAgent = header(headers, 'user-agent')?.slice(0, 500) ?? null;
-      const batch = isBot(userAgent) ? null : parseCollectBody(body);
-
-      if (batch) {
-        const ctx = {
-          ip,
-          userAgent,
-          country: geoHeader(headers, 'x-vercel-ip-country'),
-          region: geoHeader(headers, 'x-vercel-ip-country-region'),
-          city: geoHeader(headers, 'x-vercel-ip-city'),
-        };
-
-        // Gravação, envio ao Meta e sorteio A/B em paralelo: um não depende do
-        // outro, e todos precisam terminar antes da resposta (a função congela
-        // depois). O sorteio só existe no primeiro envio de uma página em teste.
-        await Promise.all([
-          this.ingestService.ingest(batch, ctx),
-          this.capi.sendWebEvents(batch.workspaceId, this.webEvents(batch, ctx)),
-          this.abTests.recordAssignments(batch.workspaceId, batch.visitorId, batch.sessionId, batch.ab),
-        ]);
-
-        this.setFirstPartyCookies(req, res, batch);
-      }
-    } catch (error: any) {
-      this.logger.error(`Erro no collect: ${error?.message}`, error?.stack);
-    }
+      trace.respond(200, '');
+      await this.debug.saveServerTrace(trace);
+    });
 
     res.status(200).send();
+  }
+
+  private async handleCollect(
+    body: unknown,
+    req: FastifyRequest,
+    res: FastifyReply,
+    headers: Headers,
+    ip: string | null,
+    trace: DebugTrace,
+  ): Promise<void> {
+    if (!this.allow(ip ?? 'unknown')) {
+      trace.title = 'Descartado — limite por IP';
+      trace.log(`Mais de ${COLLECT_LIMIT_PER_MINUTE} requisições por minuto deste IP: lote ignorado.`, 'warn');
+      return;
+    }
+
+    const userAgent = header(headers, 'user-agent')?.slice(0, 500) ?? null;
+    if (isBot(userAgent)) {
+      trace.title = 'Descartado — robô';
+      trace.log(`User agent de robô ou ausente: lote ignorado (${userAgent ?? 'sem user agent'}).`, 'warn');
+      return;
+    }
+
+    const batch = parseCollectBody(body);
+    if (!batch) {
+      trace.title = 'Descartado — lote inválido';
+      trace.log('O corpo não é um lote válido (tid, vid, sid ou events ausentes ou fora do formato).', 'warn');
+      return;
+    }
+
+    const ctx = {
+      ip,
+      userAgent,
+      country: geoHeader(headers, 'x-vercel-ip-country'),
+      region: geoHeader(headers, 'x-vercel-ip-country-region'),
+      city: geoHeader(headers, 'x-vercel-ip-city'),
+    };
+    trace.title = batch.events.map(eventLabel).join(', ');
+    for (const ev of batch.events) trace.event(eventLabel(ev));
+    trace.variable('Visitante', {
+      visitor_id: batch.visitorId,
+      session_id: batch.sessionId,
+      fbp: batch.fbp,
+      fbc: batch.fbc,
+      ip: ctx.ip,
+      user_agent: ctx.userAgent,
+      pais: ctx.country,
+      estado: ctx.region,
+      cidade: ctx.city,
+      tela: batch.screenResolution,
+      idioma: batch.language,
+    });
+    trace.variable('Eventos do lote', batch.events);
+
+    // Gravação e envio ao Meta em paralelo: um não depende do outro, e os
+    // dois precisam terminar antes da resposta (a função congela depois).
+    const [saved] = await Promise.all([
+      this.ingestService.ingest(batch, ctx),
+      this.capi.sendWebEvents(batch.workspaceId, this.webEvents(batch, ctx)),
+    ]);
+    trace.tag({
+      name: 'Gravar visita no banco',
+      status: saved > 0 ? 'fired' : 'failed',
+      detail: saved > 0 ? `${saved} evento(s) gravado(s)` : 'tracking_ingest não gravou nada (veja o console).',
+    });
+
+    const cookieDomain = this.setFirstPartyCookies(req, res, batch);
+    trace.tag({
+      name: 'Cookies first-party (_stl_vid, _fbp, _fbc)',
+      status: cookieDomain ? 'fired' : 'not_fired',
+      detail: cookieDomain
+        ? `Gravados pelo servidor no domínio ${cookieDomain}`
+        : 'O snippet não está num subdomínio do site: valem só os cookies gravados pelo navegador.',
+    });
+  }
+
+  /**
+   * Mensagens do navegador em preview: o lado web do debug. Só grava com o
+   * token do preview ligado na área.
+   */
+  @Post('debug')
+  async debugMessages(@Body() body: unknown, @Req() req: FastifyRequest, @Res() res: FastifyReply): Promise<void> {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Cache-Control', 'no-store');
+    if (!this.allow(clientIp(req) ?? 'unknown')) {
+      res.status(200).send({ ok: false, reason: 'limite' });
+      return;
+    }
+    const result = await this.debug.saveWebMessages(body).catch(() => ({ ok: false, reason: 'erro' }));
+    res.status(200).send(result);
   }
 
   /**
@@ -220,7 +295,7 @@ export class TrackingCollectController {
    * resposta do próprio domínio, vale o prazo pedido (com a ressalva de IP
    * descrita na documentação).
    */
-  private setFirstPartyCookies(req: FastifyRequest, res: FastifyReply, batch: CollectBatch): void {
+  private setFirstPartyCookies(req: FastifyRequest, res: FastifyReply, batch: CollectBatch): string | null {
     const headers = req.headers as Headers;
     const requestHost = (header(headers, 'x-forwarded-host') || header(headers, 'host') || '')
       .split(',')[0]
@@ -228,7 +303,7 @@ export class TrackingCollectController {
       .toLowerCase();
     const pageHost = hostOf(header(headers, 'origin')) ?? hostOf(header(headers, 'referer'));
     const domain = sharedCookieDomain(requestHost || null, pageHost);
-    if (!domain) return;
+    if (!domain) return null;
 
     const cookie = (name: string, value: string, maxAge: number) =>
       `${name}=${encodeURIComponent(value)}; Max-Age=${maxAge}; Domain=${domain}; Path=/; SameSite=Lax; Secure`;
@@ -237,6 +312,7 @@ export class TrackingCollectController {
     if (batch.fbp) cookies.push(cookie('_fbp', batch.fbp, FB_COOKIE_S));
     if (batch.fbc) cookies.push(cookie('_fbc', batch.fbc, FB_COOKIE_S));
     res.header('Set-Cookie', cookies);
+    return domain;
   }
 
   /**
@@ -275,4 +351,14 @@ export class TrackingCollectController {
     entry.count += 1;
     return entry.count <= COLLECT_LIMIT_PER_MINUTE;
   }
+}
+
+const EVENT_LABEL: Record<string, string> = {
+  pageview: 'PageView',
+  checkout_click: 'InitiateCheckout',
+  page_exit: 'Saída da página',
+};
+
+function eventLabel(e: CollectEvent): string {
+  return e.type === 'custom' ? e.name ?? 'Evento' : EVENT_LABEL[e.type] ?? e.type;
 }

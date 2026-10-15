@@ -243,15 +243,6 @@ export class PerfectPayProcessor {
     // Approved sales: route through SalesService for plan-limit enforcement
     const sale = await this.salesService.upsertFromWebhook(saleData);
 
-    if (sale?.id) {
-      this.webhooksService.matchAndUpdateSale(sale.id, userId, {
-        adId,
-        utmCampaign,
-        utmContent,
-        utmTerm,
-      });
-    }
-
     const logData = {
       amount: finalAmount,
       customerName: customer.full_name || null,

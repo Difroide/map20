@@ -189,17 +189,6 @@ describe('HublaProcessor', () => {
     expect(saleData.utm_content).toBe('AD+TESTE|120241859179100404');
     expect(saleData.utm_term).toBe('Instagram_Stories');
 
-    // Verify ad matching was triggered
-    expect(mockWS.matchAndUpdateSale).toHaveBeenCalledWith(
-      'sale-hubla-001',
-      TEST_USER_ID,
-      expect.objectContaining({
-        adId: '120241859179100404',
-        utmCampaign: 'CAMPANHA+TESTE|120241859179080404',
-        utmContent: 'AD+TESTE|120241859179100404',
-        utmTerm: 'Instagram_Stories',
-      }),
-    );
   });
 
   it('should process a refund webhook (refund_request.accepted)', async () => {
@@ -385,13 +374,6 @@ describe('CartPandaProcessor', () => {
 
     // Ad matching
     expect(mockWS.extractNumericAdId).toHaveBeenCalled();
-    expect(mockWS.matchAndUpdateSale).toHaveBeenCalledWith(
-      'sale-cp-001',
-      TEST_USER_ID,
-      expect.objectContaining({
-        utmCampaign: 'MARMITA 59|120239247454700535',
-      }),
-    );
   });
 
   it('should process a refund webhook (order.refunded)', async () => {
@@ -552,14 +534,6 @@ describe('GGCheckoutProcessor', () => {
     expect(saleData.metadata.src).toBe('FB');
     expect(saleData.metadata.customer_ip).toBe('172.64.222.34');
 
-    // Ad matching
-    expect(mockWS.matchAndUpdateSale).toHaveBeenCalledWith(
-      'sale-gg-001',
-      TEST_USER_ID,
-      expect.objectContaining({
-        adId: '120240276410340446',
-      }),
-    );
   });
 
   it('should process card.paid event', async () => {
@@ -750,14 +724,6 @@ describe('LastLinkProcessor', () => {
     expect(saleData.metadata.commissions).toHaveLength(2);
     expect(saleData.metadata.ip).toBe('168.181.112.236');
 
-    // Ad matching
-    expect(mockWS.matchAndUpdateSale).toHaveBeenCalledWith(
-      'sale-ll-001',
-      TEST_USER_ID,
-      expect.objectContaining({
-        adId: '120241859179100404',
-      }),
-    );
   });
 
   it('should process a refund webhook (Action=Remove) by Subscription.Id', async () => {

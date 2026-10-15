@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
-import { useImpersonation } from '@/contexts/ImpersonationContext';
 import { useToast } from '@/hooks/use-toast';
 import { CheckoutIntegration, CheckoutPlatform } from '@/types/checkout';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
@@ -23,12 +22,11 @@ export function useCheckoutIntegrations() {
   const [saving, setSaving] = useState(false);
 
   const { user } = useAuth();
-  const { isImpersonating, target } = useImpersonation();
   const { toast } = useToast();
   const { activeWorkspaceId } = useWorkspaceContext();
   const queryClient = useQueryClient();
 
-  const effectiveUserId = isImpersonating && target ? target.userId : user?.id;
+  const effectiveUserId = user?.id;
 
   const generateWebhookUrl = (platform: CheckoutPlatform): string => {
     return `${WEBHOOK_DOMAIN}/webhook-${platform}`;
@@ -46,9 +44,6 @@ export function useCheckoutIntegrations() {
     try {
       const params = new URLSearchParams();
       if (activeWorkspaceId) params.set('workspace_id', activeWorkspaceId);
-      if (isImpersonating && target) {
-        params.set('target_user_id', target.userId);
-      }
 
       const data = await api.get<CheckoutIntegration[]>(`/integrations/checkout?${params}`);
 
@@ -68,7 +63,7 @@ export function useCheckoutIntegrations() {
     } finally {
       setLoading(false);
     }
-  }, [effectiveUserId, isImpersonating, target, toast, activeWorkspaceId]);
+  }, [effectiveUserId, toast, activeWorkspaceId]);
 
   const saveIntegration = async (params: SaveIntegrationParams): Promise<boolean> => {
     if (!user?.id) return false;

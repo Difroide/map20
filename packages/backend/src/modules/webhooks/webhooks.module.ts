@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { SharedModule } from '../../shared/shared.module';
 import { SalesModule } from '../sales/sales.module';
 import { MetaCapiModule } from '../meta-capi/meta-capi.module';
+import { DebugModule } from '../debug/debug.module';
 import { WebhooksController } from './webhooks.controller';
 import { WebhooksService } from './webhooks.service';
 import { WebhookQueueService } from './webhook-queue.service';
@@ -25,7 +26,7 @@ import { GreennProcessor } from './processors/greenn.processor';
 import { GenericCheckoutProcessor } from './processors/generic/generic-checkout.processor';
 
 @Module({
-  imports: [SharedModule, MetaCapiModule, forwardRef(() => SalesModule)],
+  imports: [SharedModule, MetaCapiModule, DebugModule, forwardRef(() => SalesModule)],
   controllers: [WebhooksController],
   providers: [
     WebhooksService,

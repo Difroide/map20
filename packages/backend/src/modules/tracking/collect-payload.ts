@@ -53,30 +53,11 @@ export interface CollectBatch {
   fbp: string | null;
   fbc: string | null;
   events: CollectEvent[];
-  /** Sorteios de teste A/B feitos nesta página. Só vem no primeiro envio dela. */
-  ab?: AbAssignment[];
+  /** Token do preview, quando o navegador está em modo debug. */
+  debugToken: string | null;
 }
 
-export interface AbAssignment {
-  test_id: string;
-  variant_id: string;
-}
-
-/** Uma página raramente roda mais de um teste; 10 é folga. */
-const MAX_AB_PER_BATCH = 10;
-
-/** { id do teste: id da variante } → lista. O RPC confere se o par existe e está rodando. */
-function abAssignments(value: unknown): AbAssignment[] {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return [];
-  const out: AbAssignment[] = [];
-  for (const [test, variant] of Object.entries(value as Record<string, unknown>)) {
-    const testId = uuid(test);
-    const variantId = uuid(variant);
-    if (testId && variantId) out.push({ test_id: testId, variant_id: variantId });
-    if (out.length >= MAX_AB_PER_BATCH) break;
-  }
-  return out;
-}
+const DEBUG_TOKEN = /^[a-f0-9]{48}$/;
 
 function text(value: unknown, max: number): string | null {
   if (typeof value !== 'string') return null;
@@ -165,6 +146,25 @@ function normalizeEvent(raw: unknown): CollectEvent | null {
 }
 
 /**
+ * Só o id da área e o token do preview, de um corpo que pode nem ser um lote
+ * válido: o preview mostra também o que foi descartado.
+ */
+export function peekCollectBody(body: unknown): { workspaceId: string | null; debugToken: string | null } {
+  let data: any = body;
+  if (typeof body === 'string') {
+    try {
+      data = JSON.parse(body);
+    } catch {
+      return { workspaceId: null, debugToken: null };
+    }
+  }
+  return {
+    workspaceId: uuid(data?.tid),
+    debugToken: typeof data?.dbg === 'string' && DEBUG_TOKEN.test(data.dbg) ? data.dbg : null,
+  };
+}
+
+/**
  * O corpo como chegou (string do sendBeacon ou objeto já parseado) → lote
  * válido, ou null quando não há o que gravar.
  */
@@ -193,10 +193,8 @@ export function parseCollectBody(body: unknown): CollectBatch | null {
 
   const screen = text(b.sr, 11);
   const language = text(b.lang, 35);
-  const ab = abAssignments(b.ab);
 
   return {
-    ...(ab.length ? { ab } : {}),
     workspaceId,
     visitorId,
     sessionId,
@@ -205,6 +203,7 @@ export function parseCollectBody(body: unknown): CollectBatch | null {
     fbp: metaCookie(b.fbp),
     fbc: metaCookie(b.fbc),
     events,
+    debugToken: typeof b.dbg === 'string' && DEBUG_TOKEN.test(b.dbg) ? b.dbg : null,
   };
 }
 

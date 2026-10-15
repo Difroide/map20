@@ -420,16 +420,6 @@ export class HotmartProcessor {
 
     const saleId = insertedSale.id;
 
-    // Ad matching (non-blocking, fire-and-forget)
-    this.webhooksService.matchAndUpdateSale(saleId, userId, {
-      adId,
-      utmCampaign,
-      utmContent,
-      utmTerm,
-      adSetFbId: adsetFbId,
-      campaignFbId,
-    });
-
     const logData = {
       amount,
       customerName: buyer.name || null,
@@ -465,5 +455,4 @@ export class HotmartProcessor {
       },
     };
   }
-
 }

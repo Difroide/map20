@@ -61,7 +61,7 @@ export function ProtectedRoute({ children, requireAdmin = false }: ProtectedRout
   }
 
   if (requireAdmin && user.role !== 'admin') {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to="/preview" replace />;
   }
 
   return <>{children}</>;

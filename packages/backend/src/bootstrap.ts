@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { AppModule } from './app.module';
+import { DebugLogger } from './modules/debug/debug-logger';
 
 /**
  * Montagem da aplicação, compartilhada pelo servidor local (main.ts) e pela
@@ -14,6 +15,8 @@ export async function createApp(): Promise<NestFastifyApplication> {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
     new FastifyAdapter(),
+    // O logger que também escreve no console do preview do servidor.
+    { logger: new DebugLogger() },
   );
 
   // Na Vercel o frontend e a API moram na mesma origem, então CORS só importa
@@ -42,10 +45,6 @@ export async function createApp(): Promise<NestFastifyApplication> {
     reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
     done();
-  });
-
-  await fastify.register(require('@fastify/multipart'), {
-    limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 5 },
   });
 
   return app;

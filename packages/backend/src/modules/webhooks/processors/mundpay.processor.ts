@@ -246,15 +246,6 @@ export class MundpayProcessor {
 
     const sale = await this.salesService.upsertFromWebhook(saleData);
 
-    if (sale?.id) {
-      this.webhooksService.matchAndUpdateSale(sale.id, userId, {
-        adId,
-        utmCampaign,
-        utmContent,
-        utmTerm,
-      });
-    }
-
     this.discordLogger.logSale('mundpay', {
       amount,
       customerName: customer.name || null,

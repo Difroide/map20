@@ -37,7 +37,7 @@ export default function Login() {
         if (emailChanged) {
           setSearchParams({}, { replace: true });
         }
-        navigate('/dashboard');
+        navigate('/preview');
       } else {
         toast({
           title: 'Erro ao entrar',

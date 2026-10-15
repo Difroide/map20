@@ -2,13 +2,12 @@ import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ProfileCard } from '@/components/profile/ProfileCard';
+import { PasswordCard } from '@/components/settings/PasswordCard';
 import { AppearanceCard } from '@/components/settings/AppearanceCard';
 import { UsersCard } from '@/components/settings/UsersCard';
 import { api } from '@/lib/api';
 
-// Plano e Custos saíram: não há cobrança neste painel, e um endereço antigo
-// como ?tab=plan agora cai em Perfil por não estar nesta lista.
+// Endereço antigo (?tab=plan, ?tab=costs) cai em Conta por não estar nesta lista.
 const VALID_TABS = ['profile', 'appearance', 'users'] as const;
 const DEFAULT_TAB = 'profile';
 
@@ -39,7 +38,7 @@ export default function Settings() {
 
   return (
     <DashboardLayout>
-      <div className="space-y-6 animate-sentinel-in">
+      <div className="mx-auto max-w-4xl space-y-6 animate-sentinel-in">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Configurações</h1>
           <p className="text-sm text-muted-foreground/70 mt-1">Gerencie sua conta e preferências</p>
@@ -47,13 +46,13 @@ export default function Settings() {
 
         <Tabs value={currentTab} onValueChange={handleTabChange} className="space-y-6">
           <TabsList>
-            <TabsTrigger value="profile">Perfil</TabsTrigger>
+            <TabsTrigger value="profile">Conta</TabsTrigger>
             <TabsTrigger value="appearance">Aparência</TabsTrigger>
             {isAdmin && <TabsTrigger value="users">Usuários</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="profile">
-            <ProfileCard />
+            <PasswordCard />
           </TabsContent>
 
           <TabsContent value="appearance">

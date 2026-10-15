@@ -8,6 +8,7 @@ import { TrackingModule } from '../tracking.module';
 import { SharedModule } from '../../../shared/shared.module';
 import { SupabaseService } from '../../../shared/services/supabase.service';
 import { MetaCapiService } from '../../meta-capi/meta-capi.service';
+import { CacheService } from '../../../shared/services/cache.service';
 import { sharedCookieDomain } from '../tracking-collect.controller';
 
 const TID = '11111111-2222-4333-8444-555555555555';
@@ -17,6 +18,7 @@ const EID = '99999999-8888-4777-8666-555555555555';
 const CHROME = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Mobile/15E148';
 const FBP = 'fb.1.1711800000000.1234567890';
 const FBC = 'fb.1.1711800000000.IwAR0abc';
+const DEBUG_TOKEN = 'b'.repeat(48);
 
 /**
  * A pilha HTTP de verdade (Fastify + ValidationPipe global + ThrottlerGuard
@@ -28,6 +30,7 @@ describe('Rotas públicas do rastreio (HTTP)', () => {
   let app: NestFastifyApplication;
   const rpc = jest.fn();
   const maybeSingle = jest.fn();
+  const insert = jest.fn();
   const capi = {
     getConfig: jest.fn(),
     sendWebEvents: jest.fn(),
@@ -52,7 +55,10 @@ describe('Rotas públicas do rastreio (HTTP)', () => {
       .useValue({
         getClient: () => ({
           rpc,
-          from: () => ({ select: () => ({ eq: () => ({ maybeSingle }) }) }),
+          from: (table: string) => ({
+            select: () => ({ eq: () => ({ maybeSingle }) }),
+            insert: (rows: unknown) => insert(table, rows),
+          }),
         }),
       })
       .overrideProvider(MetaCapiService)
@@ -68,6 +74,8 @@ describe('Rotas públicas do rastreio (HTTP)', () => {
 
   afterAll(() => app?.close());
   beforeEach(() => {
+    app.get(CacheService).invalidateByPrefix('debug:');
+    insert.mockReset().mockResolvedValue({ error: null });
     rpc.mockReset().mockResolvedValue({ data: 1, error: null });
     maybeSingle.mockReset().mockResolvedValue({ data: { id: TID }, error: null });
     capi.getConfig.mockReset().mockResolvedValue({ param: 'xcod', pixelId: '123456789012345' });
@@ -107,13 +115,6 @@ describe('Rotas públicas do rastreio (HTTP)', () => {
 
       const bad = await app.inject({ method: 'GET', url: '/api/t/tracker.js?tid=<script>' });
       expect(bad.body).toContain('window.sentinel=function(){}');
-    });
-
-    it('sem como ler os testes A/B (tabela ausente, banco fora), o script sai igual, sem o bloco', async () => {
-      const res = await app.inject({ method: 'GET', url: `/api/t/tracker.js?tid=${TID}` });
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toContain(JSON.stringify(TID));
-      expect(res.body).not.toContain('abRun');
     });
 
     it('host estranho nao entra no script', async () => {
@@ -200,58 +201,92 @@ describe('Rotas públicas do rastreio (HTTP)', () => {
       expect(capi.sendWebEvents).not.toHaveBeenCalled();
     });
 
-    it('grava o sorteio do teste A/B junto com a visita', async () => {
-      const TEST = 'abababab-0000-4000-8000-000000000001';
-      const VAR = 'abababab-0000-4000-8000-00000000000b';
-      await collect({ tid: TID, vid: VID, sid: SID, ab: { [TEST]: VAR }, events: [{ type: 'pageview', event_id: EID }] });
-
-      const names = rpc.mock.calls.map((c) => c[0]);
-      expect(names).toEqual(expect.arrayContaining(['tracking_ingest', 'ab_record_assignments']));
-      const [, args] = rpc.mock.calls.find((c) => c[0] === 'ab_record_assignments')!;
-      expect(args).toEqual({
-        p_workspace_id: TID,
-        p_visitor_id: VID,
-        p_session_id: SID,
-        p_assignments: [{ test_id: TEST, variant_id: VAR }],
-      });
-    });
-
-    it('sem sorteio, nenhuma chamada a mais no banco', async () => {
-      await collect({ tid: TID, vid: VID, sid: SID, events: [{ type: 'pageview', event_id: EID }] });
-      expect(rpc.mock.calls.map((c) => c[0])).toEqual(['tracking_ingest']);
-    });
-
-    it('falha ao gravar o sorteio nao derruba a visita', async () => {
-      rpc.mockImplementation(async (fn: string) =>
-        fn === 'ab_record_assignments' ? { data: null, error: { message: 'relation does not exist' } } : { data: 1, error: null },
-      );
-      const res = await collect({
-        tid: TID, vid: VID, sid: SID,
-        ab: { 'abababab-0000-4000-8000-000000000001': 'abababab-0000-4000-8000-00000000000b' },
-        events: [{ type: 'pageview', event_id: EID }],
-      });
-      expect(res.statusCode).toBe(200);
-      expect(rpc.mock.calls.map((c) => c[0])).toContain('tracking_ingest');
-      expect(capi.sendWebEvents).toHaveBeenCalled();
-    });
-
     it('falha do banco nao vira erro para o visitante', async () => {
       rpc.mockResolvedValue({ data: null, error: { message: 'relation does not exist' } });
       const res = await collect({ tid: TID, vid: VID, sid: SID, events: [{ type: 'pageview' }] });
       expect(res.statusCode).toBe(200);
     });
 
-    it('nao cai no limite global de 60/min, e sim no proprio de 100/min por IP', async () => {
+    it('nao cai no limite global de 60/min, e sim no proprio de 300/min por IP', async () => {
       const send = (ip: string) => collect({ tid: TID, vid: VID, sid: SID, events: [{ type: 'pageview' }] }, { 'x-forwarded-for': ip });
 
-      for (let i = 0; i < 100; i++) expect((await send('9.9.9.9')).statusCode).toBe(200);
-      expect(rpc).toHaveBeenCalledTimes(100);
+      for (let i = 0; i < 300; i++) expect((await send('9.9.9.9')).statusCode).toBe(200);
+      expect(rpc).toHaveBeenCalledTimes(300);
 
-      await send('9.9.9.9'); // 101ª: descartada em silêncio
-      expect(rpc).toHaveBeenCalledTimes(100);
+      await send('9.9.9.9'); // 301ª: descartada em silêncio
+      expect(rpc).toHaveBeenCalledTimes(300);
 
       await send('8.8.8.8'); // outro IP segue passando
-      expect(rpc).toHaveBeenCalledTimes(101);
+      expect(rpc).toHaveBeenCalledTimes(301);
+    });
+  });
+
+  describe('preview (debug do servidor)', () => {
+    const previewOn = () =>
+      maybeSingle.mockResolvedValue({
+        data: { id: TID, debug_until: new Date(Date.now() + 600_000).toISOString(), debug_token: DEBUG_TOKEN },
+        error: null,
+      });
+
+    it('fora do preview, nada vai para debug_traces', async () => {
+      await collect({ tid: TID, vid: VID, sid: SID, events: [{ type: 'pageview', event_id: EID }] });
+      expect(insert).not.toHaveBeenCalled();
+    });
+
+    it('em preview, grava o rastro com request, variaveis, tags e o navegador que depura', async () => {
+      previewOn();
+      await collect(
+        { tid: TID, vid: VID, sid: SID, fbp: FBP, dbg: DEBUG_TOKEN, events: [{ type: 'pageview', event_id: EID }] },
+        { 'x-forwarded-for': '7.7.7.7' },
+      );
+
+      const [table, row] = insert.mock.calls.find((c) => c[0] === 'debug_traces')!;
+      expect(table).toBe('debug_traces');
+      expect(row).toMatchObject({
+        workspace_id: TID,
+        source: 'server',
+        kind: 'collect',
+        title: 'PageView',
+        browser_token: DEBUG_TOKEN,
+      });
+      expect(row.data.request.path).toBe('/api/t/collect');
+      expect(row.data.variables.Visitante).toMatchObject({ visitor_id: VID, fbp: FBP, ip: '7.7.7.7' });
+      expect(row.data.tags).toContainEqual(expect.objectContaining({ name: 'Gravar visita no banco', status: 'fired' }));
+      expect(row.data.response).toEqual({ status: 200, body: '' });
+    });
+
+    it('robo tambem aparece no preview, como descartado', async () => {
+      previewOn();
+      await collect({ tid: TID, vid: VID, sid: SID, events: [{ type: 'pageview' }] }, { 'user-agent': 'facebookexternalhit/1.1' });
+      const [, row] = insert.mock.calls.find((c) => c[0] === 'debug_traces')!;
+      expect(row.title).toBe('Descartado — robô');
+      expect(row.status).toBe('warning');
+    });
+
+    it('mensagens do navegador entram so com o token do preview ligado', async () => {
+      previewOn();
+      const post = (dbg: string) =>
+        app.inject({
+          method: 'POST',
+          url: '/api/t/debug',
+          headers: { 'content-type': 'text/plain' },
+          payload: JSON.stringify({
+            tid: TID,
+            dbg,
+            msgs: [{ type: 'pageview', title: 'PageView', page_id: 'abcdef12', data: { tags: [{ name: 'x', status: 'fired' }] } }],
+          }),
+        });
+
+      const ok = await post(DEBUG_TOKEN);
+      expect(ok.json()).toEqual({ ok: true });
+      expect(ok.headers['access-control-allow-origin']).toBe('*');
+      const [, rows] = insert.mock.calls.find((c) => c[0] === 'debug_traces')!;
+      expect(rows[0]).toMatchObject({ workspace_id: TID, source: 'web', kind: 'pageview', page_id: 'abcdef12', status: 'ok' });
+
+      insert.mockClear();
+      const wrong = await post('c'.repeat(48));
+      expect(wrong.json()).toEqual({ ok: false, reason: 'preview encerrado' });
+      expect(insert).not.toHaveBeenCalled();
     });
   });
 
@@ -263,12 +298,12 @@ describe('Rotas públicas do rastreio (HTTP)', () => {
   });
 
   it('rotas de leitura exigem login', async () => {
-    const res = await app.inject({ method: 'GET', url: `/api/tracking/stats?workspace_id=${TID}` });
+    const res = await app.inject({ method: 'GET', url: `/api/debug/traces?workspace_id=${TID}` });
     expect(res.statusCode).toBe(401);
+    const start = await app.inject({ method: 'POST', url: '/api/debug/start', payload: { workspace_id: TID } });
+    expect(start.statusCode).toBe(401);
     const capiRes = await app.inject({ method: 'GET', url: `/api/capi/settings?workspace_id=${TID}` });
     expect(capiRes.statusCode).toBe(401);
-    const abRes = await app.inject({ method: 'GET', url: `/api/ab-tests?workspace_id=${TID}` });
-    expect(abRes.statusCode).toBe(401);
     const cron = await app.inject({ method: 'GET', url: '/api/capi/retry-cron' });
     expect(cron.statusCode).toBe(401); // sem CRON_SECRET a rota fica fechada
   });

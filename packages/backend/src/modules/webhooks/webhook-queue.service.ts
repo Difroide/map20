@@ -1,5 +1,4 @@
 import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
 import { SupabaseService } from '../../shared/services/supabase.service';
 import { HotmartProcessor } from './processors/hotmart.processor';
 import { KiwifyProcessor } from './processors/kiwify.processor';
@@ -21,6 +20,7 @@ import { DiscordLoggerService } from '../../shared/services/discord-logger.servi
 import { MetaCapiService } from '../meta-capi/meta-capi.service';
 import { GenericCheckoutProcessor } from './processors/generic/generic-checkout.processor';
 import { GENERIC_PLATFORMS } from './processors/generic/checkout-specs';
+import { debugContext } from '../debug/debug-context';
 import {
   extractTrackingRef,
   WebhookContext,
@@ -123,8 +123,20 @@ export class WebhookQueueService {
     };
     return webhookContext.run(ctx, async () => {
       const result = await this.dispatchDirect(data);
+      const trace = debugContext.getStore();
+      trace?.variable('Indexador encontrado no corpo', ctx.trackingRef ?? 'nenhum (stl_<sessão> não veio no webhook)');
       if (ctx.approvedSaleIds.length > 0) {
         await this.metaCapi.sendPurchases(ctx.approvedSaleIds);
+      } else if (trace) {
+        trace.event('Sem Purchase');
+        trace.tag({
+          name: 'Meta CAPI — Purchase',
+          status: 'not_fired',
+          detail:
+            result.status >= 400
+              ? `O processor recusou o webhook (HTTP ${result.status}).`
+              : 'Nenhuma venda aprovada nova neste webhook (pendente, reembolso, produto ignorado ou reentrega).',
+        });
       }
       return result;
     });

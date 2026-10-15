@@ -105,7 +105,6 @@ describe('GenericCheckoutProcessor', () => {
         metadata: expect.objectContaining({ event: 'order.paid', product_id: '321', zipcode: '40000000' }),
       }),
     );
-    expect(webhooks.matchAndUpdateSale).toHaveBeenCalledWith('sale-1', 'user-1', expect.objectContaining({ adId: '120245519580910309' }));
     expect(updates.some((u) => u.table === 'checkout_integrations' && u.values.last_webhook_at)).toBe(true);
   });
 

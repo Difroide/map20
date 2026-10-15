@@ -197,15 +197,6 @@ export class KirvanoProcessor {
     // Route through SalesService for plan-limit enforcement
     const insertedSale = await this.salesService.upsertFromWebhook(saleData);
 
-    if (insertedSale?.id) {
-      this.webhooksService.matchAndUpdateSale(insertedSale.id, userId, {
-        adId,
-        utmCampaign,
-        utmContent,
-        utmTerm,
-      });
-    }
-
     const logData = {
       amount: Number(amount),
       customerName: customer.name || customer.full_name || null,

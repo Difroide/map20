@@ -236,17 +236,6 @@ export class GuruProcessor {
     // Route through SalesService for plan-limit enforcement
     const insertedSale = await this.salesService.upsertFromWebhook(saleData);
 
-    if (insertedSale?.id) {
-      this.webhooksService.matchAndUpdateSale(insertedSale.id, userId, {
-        adId,
-        utmCampaign,
-        utmContent,
-        utmTerm,
-        adSetFbId,
-        campaignFbId,
-      });
-    }
-
     // Discord log
     const logData = {
       amount,

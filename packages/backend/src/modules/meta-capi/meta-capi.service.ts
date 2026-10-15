@@ -4,6 +4,7 @@ import { CacheService } from '../../shared/services/cache.service';
 import { EncryptionService } from '../../shared/services/encryption.service';
 import { buildUserData, MetaUserData, explainUserData, UserDataInput } from './meta-user-data';
 import { META_API_VERSION } from '../../shared/constants/meta-api';
+import { debugContext } from '../debug/debug-context';
 
 const GRAPH_VERSION = META_API_VERSION;
 const CONFIG_TTL_MS = 60_000;
@@ -172,7 +173,10 @@ export class MetaCapiService {
     if (inputs.length === 0) return;
     try {
       const config = await this.getConfig(workspaceId);
-      if (!this.enabled(config)) return;
+      if (!this.enabled(config)) {
+        notFired(inputs.map((e) => WEB_EVENT_NAME[e.type]), config);
+        return;
+      }
 
       const events: MetaEvent[] = inputs.map((e) => ({
         event_name: WEB_EVENT_NAME[e.type],
@@ -190,6 +194,17 @@ export class MetaCapiService {
           country: e.country,
         }),
       }));
+
+      const trace = debugContext.getStore();
+      if (trace) {
+        events.forEach((ev, i) => {
+          const e = inputs[i];
+          trace.variable(`user_data — ${ev.event_name}`, explainUserData(
+            { externalId: e.visitorId, ip: e.ip, userAgent: e.userAgent, fbp: e.fbp, fbc: e.fbc, state: e.region, country: e.country },
+            ev.user_data,
+          ));
+        });
+      }
 
       const result = await this.post(config, events);
       await this.record(
@@ -256,7 +271,11 @@ export class MetaCapiService {
   private async sendPurchase(lines: any[]): Promise<void> {
     const first = lines[0];
     const config = await this.getConfig(first.workspace_id);
-    if (!this.enabled(config)) return;
+    const trace = debugContext.getStore();
+    if (!this.enabled(config)) {
+      notFired(['Purchase'], config);
+      return;
+    }
 
     const client = this.supabase.getClient();
     const withSession = lines.find((l) => l.session_id);
@@ -270,6 +289,7 @@ export class MetaCapiService {
         .maybeSingle();
       session = data;
     }
+    trace?.variable('Visita casada com a venda', session ?? 'nenhuma — o Purchase sai só com os dados do comprador');
 
     const orderId = first.order_external_id || first.external_id || first.id;
     const soldAt = Math.floor(new Date(first.sold_at).getTime() / 1000);
@@ -325,11 +345,21 @@ export class MetaCapiService {
     }
 
     if (reserveError) {
-      if (!/duplicate|unique/i.test(reserveError.message)) {
+      const duplicate = /duplicate|unique/i.test(reserveError.message);
+      if (!duplicate) {
         this.logger.warn(`Reserva do Purchase ${orderId}: ${reserveError.message}`);
       }
+      trace?.tag({
+        name: 'Meta CAPI — Purchase',
+        status: duplicate ? 'not_fired' : 'failed',
+        detail: duplicate
+          ? `O Purchase deste pedido já tinha sido enviado (event_id ${event.event_id}).`
+          : reserveError.message,
+      });
       return;
     }
+
+    trace?.variable('user_data — Purchase', explainUserData(purchaseUserInput(first, session, withSession), event.user_data));
 
     const result = await this.post(config, [event]);
     await client
@@ -540,10 +570,48 @@ export class MetaCapiService {
   // Graph API
   // -------------------------------------------------------------------------
 
+  /** Envia ao Graph e, no preview, registra a chamada e uma tag por evento. */
   private async post(
     config: WorkspaceTrackingConfig & { pixelId: string; token: string },
     events: MetaEvent[],
   ): Promise<SendResult> {
+    const started = Date.now();
+    const result = await this.graph(config, events);
+    const trace = debugContext.getStore();
+    if (trace) {
+      const httpIndex = trace.http({
+        method: 'POST',
+        url: `https://graph.facebook.com/${GRAPH_VERSION}/${config.pixelId}/events`,
+        // O access_token nunca sai do servidor, nem para o painel.
+        requestBody: {
+          data: events,
+          access_token: '••••',
+          ...(config.testEventCode ? { test_event_code: config.testEventCode } : {}),
+        },
+        status: result.status,
+        responseBody: result.response,
+        durationMs: Date.now() - started,
+        error: result.error,
+      });
+      for (const ev of events) {
+        trace.event(ev.event_name);
+        trace.tag({
+          name: `Meta CAPI — ${ev.event_name}`,
+          status: result.ok ? 'fired' : 'failed',
+          detail: result.ok
+            ? `Pixel ${config.pixelId} · event_id ${ev.event_id}${config.testEventCode ? ` · código de teste ${config.testEventCode}` : ''}`
+            : result.error,
+          httpIndex,
+        });
+      }
+    }
+    return result;
+  }
+
+  private async graph(
+    config: WorkspaceTrackingConfig & { pixelId: string; token: string },
+    events: MetaEvent[],
+  ): Promise<SendResult & { status: number | null }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), GRAPH_TIMEOUT_MS);
     try {
@@ -562,10 +630,11 @@ export class MetaCapiService {
       );
       const body: any = await res.json().catch(() => null);
       if (res.ok && body && !body.error) {
-        return { ok: true, response: body, fbtraceId: body.fbtrace_id ?? null, error: null };
+        return { ok: true, status: res.status, response: body, fbtraceId: body.fbtrace_id ?? null, error: null };
       }
       return {
         ok: false,
+        status: res.status,
         response: body,
         fbtraceId: body?.error?.fbtrace_id ?? null,
         error: body?.error?.error_user_msg || body?.error?.message || `HTTP ${res.status}`,
@@ -573,6 +642,7 @@ export class MetaCapiService {
     } catch (err: any) {
       return {
         ok: false,
+        status: null,
         response: null,
         fbtraceId: null,
         error: err?.name === 'AbortError' ? `Meta nao respondeu em ${GRAPH_TIMEOUT_MS}ms` : err?.message ?? 'erro de rede',
@@ -617,4 +687,19 @@ function purchaseUserInput(sale: any, session: any, withSession: any): UserDataI
     fbp: session?.fbp ?? null,
     fbc: session?.fbc ?? null,
   };
+}
+
+/** No preview: a tag existe, mas não disparou porque a CAPI não está configurada. */
+function notFired(eventNames: string[], config: WorkspaceTrackingConfig | null) {
+  const trace = debugContext.getStore();
+  if (!trace) return;
+  const reason = !config
+    ? 'Área sem configuração de CAPI.'
+    : !config.pixelId
+      ? 'ID do pixel não configurado em Integrações.'
+      : 'Token da API de Conversões não configurado em Integrações.';
+  for (const name of new Set(eventNames)) {
+    trace.event(name);
+    trace.tag({ name: `Meta CAPI — ${name}`, status: 'not_fired', detail: reason });
+  }
 }

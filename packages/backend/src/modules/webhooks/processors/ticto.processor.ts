@@ -197,15 +197,6 @@ export class TictoProcessor {
     // Approved sales: route through SalesService for plan-limit enforcement
     const sale = await this.salesService.upsertFromWebhook(saleData);
 
-    if (sale?.id) {
-      this.webhooksService.matchAndUpdateSale(sale.id, userId, {
-        adId: extractedAdId,
-        utmCampaign: tracking.utm_campaign || queryParams.utm_campaign || null,
-        utmContent: tracking.utm_content || queryParams.utm_content || null,
-        utmTerm: tracking.utm_term || queryParams.utm_term || null,
-      });
-    }
-
     const logData = {
       amount,
       customerName: customer.name || null,

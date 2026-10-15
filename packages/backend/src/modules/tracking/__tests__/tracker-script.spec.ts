@@ -1,5 +1,4 @@
-import { buildTrackerScript, TrackerAbTest } from '../tracker-script';
-import { normalizePageUrl } from '../../ab-tests/ab-url';
+import { buildTrackerScript } from '../tracker-script';
 
 // O jsdom já está no monorepo (via testes do frontend), mas sem @types:
 // require evita trazer uma dependência só para tipar o teste.
@@ -9,6 +8,8 @@ type JSDOM = any;
 
 const TID = '11111111-2222-4333-8444-555555555555';
 const ENDPOINT = 'https://track.loja.com.br/api/t/collect';
+const DEBUG_ENDPOINT = 'https://track.loja.com.br/api/t/debug';
+const DEBUG_TOKEN = 'a'.repeat(48);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 const opened: JSDOM[] = [];
@@ -18,6 +19,8 @@ interface Page {
   w: any;
   openMock: jest.Mock;
   beacons: any[];
+  /** O que o modo preview mandou ao painel (fetch e beacon em /api/t/debug). */
+  debug: any[];
   /** Erros do jsdom ao tentar navegar (ele não navega): um por redirecionamento. */
   navigations: string[];
   hide: () => void;
@@ -31,9 +34,10 @@ interface LoadOptions {
   fbq?: jest.Mock;
   pixel?: string;
   xcodUtm?: boolean;
-  abTests?: TrackerAbTest[];
   /** Navegador que recusa cookie: o que for gravado some. */
   blockCookies?: boolean;
+  /** Resposta do servidor às mensagens do preview. */
+  debugReply?: { ok: boolean; reason?: string };
 }
 
 /**
@@ -51,6 +55,7 @@ function loadPage(url: string, html = '', opts: LoadOptions = {}): Page {
   opened.push(dom);
   const w = dom.window as any;
   const beacons: any[] = [];
+  const debug: any[] = [];
 
   for (const c of opts.cookies ?? []) w.document.cookie = `${c}; path=/`;
   if (opts.blockCookies) {
@@ -62,11 +67,19 @@ function loadPage(url: string, html = '', opts: LoadOptions = {}): Page {
   });
   Object.defineProperty(w.navigator, 'sendBeacon', {
     value: (endpoint: string, body: string) => {
-      expect(endpoint).toBe(ENDPOINT);
-      beacons.push(JSON.parse(body));
+      if (endpoint === DEBUG_ENDPOINT) debug.push(JSON.parse(body));
+      else {
+        expect(endpoint).toBe(ENDPOINT);
+        beacons.push(JSON.parse(body));
+      }
       return true;
     },
   });
+  w.fetch = (endpoint: string, init: { body: string }) => {
+    expect(endpoint).toBe(DEBUG_ENDPOINT);
+    debug.push(JSON.parse(init.body));
+    return Promise.resolve({ json: () => Promise.resolve(opts.debugReply ?? { ok: true }) });
+  };
   if (opts.dnt) Object.defineProperty(w.navigator, 'doNotTrack', { value: '1' });
   if (opts.fbq) w.fbq = opts.fbq;
   // jsdom não implementa window.open nem navegação.
@@ -86,7 +99,6 @@ function loadPage(url: string, html = '', opts: LoadOptions = {}): Page {
       param: opts.param ?? 'sck',
       pixelId: opts.pixel,
       xcodUtm: opts.xcodUtm,
-      abTests: opts.abTests,
     }),
   );
 
@@ -95,6 +107,7 @@ function loadPage(url: string, html = '', opts: LoadOptions = {}): Page {
     w,
     openMock,
     beacons,
+    debug,
     navigations,
     hide: () => {
       Object.defineProperty(w.document, 'visibilityState', { value: 'hidden', configurable: true });
@@ -118,40 +131,13 @@ function sidOf(page: Page) {
   return page.dom.window.document.cookie.match(/_stl_sid=([^;]+)/)![1];
 }
 
-// Teste A/B: as chaves de página saem da mesma função do servidor, então os
-// testes também conferem que o snippet e o servidor calculam a chave igual.
-const TEST_ID = 'abababab-0000-4000-8000-000000000001';
-const VAR_A = 'abababab-0000-4000-8000-00000000000a';
-const VAR_B = 'abababab-0000-4000-8000-00000000000b';
-const HALF: [number, number] = [50, 50];
-// Pesos extremos para o sorteio não depender do acaso (erro de 1 em 10^8).
-const ALWAYS_A: [number, number] = [100_000_000, 1];
-const ALWAYS_B: [number, number] = [1, 100_000_000];
-
-function redirectTest([wa, wb]: [number, number]): TrackerAbTest {
-  const a = normalizePageUrl('https://www.loja.com.br/oferta')!;
-  const b = normalizePageUrl('https://www.loja.com.br/oferta-b')!;
-  return {
-    id: TEST_ID,
-    m: 'redirect',
-    p: a.key,
-    v: [
-      { id: VAR_A, k: 'A', w: wa, u: a.url, p: a.key },
-      { id: VAR_B, k: 'B', w: wb, u: b.url, p: b.key },
-    ],
-  };
+/** As mensagens do preview, na ordem. */
+function messages(page: Page) {
+  return page.debug.flatMap((b) => b.msgs);
 }
 
-function elementsTest([wa, wb]: [number, number]): TrackerAbTest {
-  return {
-    id: TEST_ID,
-    m: 'elements',
-    p: normalizePageUrl('https://www.loja.com.br/oferta/')!.key,
-    v: [
-      { id: VAR_A, k: 'A', w: wa, u: null, p: null },
-      { id: VAR_B, k: 'B', w: wb, u: null, p: null },
-    ],
-  };
+function wait(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 describe('tracker.js', () => {
@@ -537,151 +523,107 @@ describe('tracker.js', () => {
     });
   });
 
-  describe('Teste A/B', () => {
-    const PAGE_A = 'https://www.loja.com.br/oferta';
-    const PAGE_B = 'https://www.loja.com.br/oferta-b';
-    const VID = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
-    const ab = (page: Page) => page.beacons.find((b) => b.ab)?.ab;
+  describe('Modo preview', () => {
+    const PREVIEW_URL = `https://www.loja.com.br/oferta?utm_source=facebook&stl_debug=${DEBUG_TOKEN}`;
 
-    it('sem teste rodando, o bloco A/B nem vai no script', () => {
-      expect(buildTrackerScript(TID, ENDPOINT)).not.toContain('abRun');
-      expect(buildTrackerScript(TID, ENDPOINT, { param: 'sck', abTests: [] })).not.toContain('abRun');
-      expect(buildTrackerScript(TID, ENDPOINT, { param: 'sck', abTests: [elementsTest(HALF)] })).toContain('abRun');
+    it('sem o token, nao manda nada ao painel nem mostra o selo', async () => {
+      const page = loadPage('https://www.loja.com.br/oferta');
+      await ready(page);
+      await wait(400);
+      expect(page.debug).toHaveLength(0);
+      expect(page.w.document.querySelector('[data-stl-debug]')).toBeNull();
+      expect(page.beacons[0].dbg).toBeUndefined();
     });
 
-    describe('modo elements', () => {
-      const html =
-        '<h1 id="a" data-stl-ab="A">Titulo A</h1><h1 id="b" data-stl-ab="B" hidden>Titulo B</h1>';
+    it('com ?stl_debug: mostra o selo, tira o token da URL e manda snippet carregado e PageView', async () => {
+      const page = loadPage(PREVIEW_URL, '<a href="https://pay.hotmart.com/X123">Comprar</a>', { pixel: '123456789' });
+      await ready(page);
+      await wait(400);
 
-      it('mostra os blocos da variante sorteada e esconde os outros', async () => {
-        const page = loadPage(`${PAGE_A}?utm_source=fb`, html, { abTests: [elementsTest(ALWAYS_B)] });
-        await ready(page);
-        const doc = page.dom.window.document;
+      expect(page.w.location.href).not.toContain('stl_debug');
+      expect(page.w.document.querySelector('[data-stl-debug]')).not.toBeNull();
 
-        expect(doc.getElementById('b')!.hasAttribute('hidden')).toBe(false);
-        expect(doc.documentElement.className).toContain('stl-ab-b');
-        const css = [...doc.querySelectorAll('style')].map((s: any) => s.textContent).join('');
-        expect(css).toContain('[data-stl-ab]:not([data-stl-ab~="B"]){display:none!important}');
-        expect(page.w.getComputedStyle(doc.getElementById('a')).display).toBe('none');
-      });
+      const body = page.debug[0];
+      expect(body).toEqual(expect.objectContaining({ tid: TID, dbg: DEBUG_TOKEN }));
+      const types = messages(page).map((m) => m.type);
+      expect(types).toEqual(expect.arrayContaining(['container', 'pageview', 'decorate']));
 
-      it('controle sorteado: a pagina fica como esta', async () => {
-        const page = loadPage(PAGE_A, html, { abTests: [elementsTest(ALWAYS_A)] });
-        await ready(page);
-        const doc = page.dom.window.document;
-        expect(doc.getElementById('b')!.hasAttribute('hidden')).toBe(true);
-        expect(ab(page)).toEqual({ [TEST_ID]: VAR_A });
-      });
-
-      it('o sorteio vai so no primeiro envio da pagina, junto com o pageview', async () => {
-        const page = loadPage(PAGE_A, html, { abTests: [elementsTest(ALWAYS_B)] });
-        await ready(page);
-        page.hide();
-
-        expect(page.beacons.length).toBeGreaterThanOrEqual(2);
-        expect(page.beacons[0].ab).toEqual({ [TEST_ID]: VAR_B });
-        expect(page.beacons[0].events[0].type).toBe('pageview');
-        expect(page.beacons.slice(1).some((b) => b.ab)).toBe(false);
-      });
-
-      it('a chave da pagina ignora www, barra final e query string', async () => {
-        const page = loadPage('https://loja.com.br/oferta/?utm_source=fb', html, { abTests: [elementsTest(ALWAYS_B)] });
-        await ready(page);
-        expect(ab(page)).toEqual({ [TEST_ID]: VAR_B });
-      });
-
-      it('fora da pagina do teste, nada muda', async () => {
-        const page = loadPage('https://www.loja.com.br/obrigado', html, { abTests: [elementsTest(ALWAYS_B)] });
-        await ready(page);
-        expect(ab(page)).toBeUndefined();
-        expect(page.dom.window.document.querySelectorAll('style')).toHaveLength(0);
-      });
-
-      it('sentinel("ab", fn) entrega a letra sorteada, inclusive chamado antes do script', async () => {
-        const early = jest.fn();
-        const page = loadPage(PAGE_A, html, { abTests: [elementsTest(ALWAYS_B)], queued: [['ab', early]] });
-        await ready(page);
-        const late = jest.fn();
-        page.w.sentinel('ab', late);
-        expect(early).toHaveBeenCalledWith({ [TEST_ID]: 'B' });
-        expect(late).toHaveBeenCalledWith({ [TEST_ID]: 'B' });
-      });
+      const pv = messages(page).find((m) => m.type === 'pageview');
+      expect(pv.data.tags).toEqual([
+        expect.objectContaining({ name: 'Meta Pixel — PageView (navegador)', status: 'fired' }),
+        expect.objectContaining({ name: 'Enviar ao servidor → Meta CAPI — PageView', status: 'fired' }),
+      ]);
+      // O event_id do painel é o mesmo que foi ao /collect.
+      expect(pv.data.event.event_id).toBe(events(page).find((e) => e.type === 'pageview').event_id);
     });
 
-    describe('modo redirect', () => {
-      it('sorteado para outra pagina: vai para ela antes do pageview e guarda o referrer', async () => {
-        const page = loadPage(`${PAGE_A}?utm_source=fb`, '', { abTests: [redirectTest(ALWAYS_B)] });
-        await ready(page);
-
-        expect(page.navigations).toHaveLength(1);
-        expect(page.beacons).toHaveLength(0);
-        const ref = page.dom.window.document.cookie.match(/_stl_abref=([^;]*)/);
-        expect(decodeURIComponent(ref![1])).toBe('https://l.facebook.com/');
-      });
-
-      it('na pagina da propria variante: fica, conta o pageview com o referrer original', async () => {
-        const page = loadPage(`${PAGE_B}?utm_source=fb`, '', {
-          abTests: [redirectTest(ALWAYS_B)],
-          cookies: [`_stl_abref=${encodeURIComponent('https://www.google.com/')}`],
-        });
-        await ready(page);
-
-        expect(page.navigations).toHaveLength(0);
-        expect(ab(page)).toEqual({ [TEST_ID]: VAR_B });
-        const pv = events(page).find((e) => e.type === 'pageview');
-        expect(pv.referrer).toBe('https://www.google.com/');
-        expect(pv.utm_source).toBe('fb');
-        expect(page.dom.window.document.cookie).not.toContain('_stl_abref');
-      });
-
-      it('quem entra direto na pagina B mas foi sorteado para A volta para A', async () => {
-        const page = loadPage(PAGE_B, '', { abTests: [redirectTest(ALWAYS_A)] });
-        await ready(page);
-        expect(page.navigations).toHaveLength(1);
-        expect(page.beacons).toHaveLength(0);
-      });
-
-      it('sem cookie gravavel nao sorteia: nada de redirecionar em loop', async () => {
-        const page = loadPage(PAGE_A, '', { abTests: [redirectTest(ALWAYS_B)], blockCookies: true });
-        await ready(page);
-        expect(page.navigations).toHaveLength(0);
-        expect(page.beacons).toHaveLength(1);
-        expect(page.beacons[0].ab).toBeUndefined();
-      });
-
-      it('Do Not Track: nem sorteia, nem redireciona', async () => {
-        const page = loadPage(PAGE_A, '', { abTests: [redirectTest(ALWAYS_B)], dnt: true });
-        await ready(page);
-        expect(page.navigations).toHaveLength(0);
-        expect(page.beacons).toHaveLength(0);
-      });
+    it('o /collect leva o token, para o preview do servidor marcar este navegador', async () => {
+      const page = loadPage(PREVIEW_URL);
+      await ready(page);
+      expect(page.beacons[0].dbg).toBe(DEBUG_TOKEN);
     });
 
-    describe('sorteio', () => {
-      it('o mesmo visitante cai sempre na mesma variante', async () => {
-        const seen = new Set<string>();
-        for (let i = 0; i < 3; i++) {
-          const page = loadPage(PAGE_A, '', { abTests: [elementsTest(HALF)], cookies: [`_stl_vid=${VID}`] });
-          await ready(page);
-          seen.add(ab(page)[TEST_ID]);
-          page.dom.window.close();
-        }
-        expect(seen.size).toBe(1);
-      });
+    it('o token nao vai para o checkout junto com a query de chegada', async () => {
+      const page = loadPage(PREVIEW_URL, '<a id="buy" href="https://pay.hotmart.com/X123">Comprar</a>');
+      await ready(page);
+      const href = page.w.document.getElementById('buy').href;
+      expect(href).toContain('utm_source=facebook');
+      expect(href).not.toContain('stl_debug');
+    });
 
-      it('divide os visitantes pelo peso', async () => {
-        let b = 0;
-        const total = 200;
-        for (let i = 0; i < total; i++) {
-          const page = loadPage(PAGE_A, '', { abTests: [elementsTest(HALF)] });
-          await ready(page);
-          if (ab(page)[TEST_ID] === VAR_B) b++;
-          page.dom.window.close();
-        }
-        // 50/50: com 200 visitantes, fora de 70–130 é praticamente impossível (> 4 desvios).
-        expect(b).toBeGreaterThan(70);
-        expect(b).toBeLessThan(130);
-      });
+    it('vale para as proximas paginas do site, pelo cookie _stl_dbg', async () => {
+      const first = loadPage(PREVIEW_URL);
+      await ready(first);
+      const cookies = first.dom.window.document.cookie.split('; ');
+      const second = loadPage('https://www.loja.com.br/obrigado', '', { cookies });
+      await ready(second);
+      await wait(400);
+      expect(messages(second).some((m) => m.type === 'pageview')).toBe(true);
+    });
+
+    it('?stl_debug=off sai do modo', async () => {
+      const first = loadPage(PREVIEW_URL);
+      await ready(first);
+      const cookies = first.dom.window.document.cookie.split('; ');
+      const off = loadPage('https://www.loja.com.br/oferta?stl_debug=off', '', { cookies });
+      await ready(off);
+      await wait(400);
+      expect(off.debug).toHaveLength(0);
+      expect(off.dom.window.document.cookie).not.toContain('_stl_dbg=a');
+    });
+
+    it('InitiateCheckout aparece com o destino, como foi detectado e as tags', async () => {
+      const page = loadPage(PREVIEW_URL, '<a id="buy" href="https://pay.hotmart.com/X123">Comprar</a>');
+      await ready(page);
+      page.w.document.getElementById('buy').click();
+      await wait(400);
+      const ic = messages(page).find((m) => m.type === 'checkout');
+      expect(ic.data.vars.detectado_por).toBe('link');
+      expect(ic.data.vars.destino).toContain('sck=stl_');
+      expect(ic.data.tags[0]).toEqual(expect.objectContaining({ status: 'not_fired' }));
+    });
+
+    it('mostra os dataLayer.push da pagina, inclusive os de antes do snippet', async () => {
+      const dom = loadPage(PREVIEW_URL);
+      await ready(dom);
+      dom.w.dataLayer.push({ event: 'lead', valor: 10 });
+      await wait(400);
+      const dl = messages(dom).filter((m) => m.type === 'datalayer');
+      expect(dl.map((m) => m.title)).toContain('dataLayer: lead');
+    });
+
+    it('avisa quando a pagina nao tem link de checkout', async () => {
+      const page = loadPage(PREVIEW_URL, '<p>sem botao</p>');
+      await ready(page);
+      await wait(400);
+      expect(messages(page).some((m) => m.type === 'warning')).toBe(true);
+    });
+
+    it('preview encerrado no painel: o selo diz isso', async () => {
+      const page = loadPage(PREVIEW_URL, '', { debugReply: { ok: false, reason: 'preview encerrado' } });
+      await ready(page);
+      await wait(400);
+      expect(page.w.document.querySelector('[data-stl-debug]').textContent).toContain('preview encerrado');
     });
   });
 
@@ -697,36 +639,10 @@ describe('tracker.js', () => {
       expect(script).toContain('PARAM = "sck"');
     });
 
-    it('fica abaixo de 5 KB comprimido', () => {
+    it('fica abaixo de 8 KB comprimido, com o modo preview dentro', () => {
       // eslint-disable-next-line @typescript-eslint/no-var-requires
       const { gzipSync } = require('zlib');
-      expect(gzipSync(buildTrackerScript(TID, ENDPOINT)).length).toBeLessThan(5 * 1024);
-    });
-
-    it('com teste A/B rodando, continua abaixo de 6 KB comprimido', () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { gzipSync } = require('zlib');
-      const script = buildTrackerScript(TID, ENDPOINT, { param: 'sck', abTests: [redirectTest(HALF)] });
-      expect(gzipSync(script).length).toBeLessThan(6 * 1024);
-      expect(() => new Function(script)).not.toThrow();
-    });
-
-    it('teste A/B com formato torto nao entra no script', () => {
-      const bad = { ...redirectTest(HALF), id: '"+alert(1)+"' };
-      const badUrl = redirectTest(HALF);
-      badUrl.v[1] = { ...badUrl.v[1], u: 'javascript:alert(1)' };
-      for (const t of [bad, badUrl]) {
-        const script = buildTrackerScript(TID, ENDPOINT, { param: 'sck', abTests: [t as TrackerAbTest] });
-        expect(script).not.toContain('abRun');
-        expect(script).not.toContain('alert(1)');
-      }
-    });
-
-    it('URL de variante com marcador de substituicao nao e trocada', () => {
-      const t = redirectTest(HALF);
-      t.v[1] = { ...t.v[1], u: 'https://www.loja.com.br/b?x=__TID__' };
-      const script = buildTrackerScript(TID, ENDPOINT, { param: 'sck', abTests: [t] });
-      expect(script).toContain('https://www.loja.com.br/b?x=__TID__');
+      expect(gzipSync(buildTrackerScript(TID, ENDPOINT)).length).toBeLessThan(8 * 1024);
     });
   });
 });

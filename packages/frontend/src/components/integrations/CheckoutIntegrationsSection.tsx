@@ -21,7 +21,6 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CheckoutPlatform, CHECKOUT_PLATFORMS, CheckoutIntegration } from '@/types/checkout';
 import { useCheckoutIntegrations } from '@/hooks/useCheckoutIntegrations';
-import { usePlanUsage } from '@/hooks/usePlanUsage';
 import { CheckoutConfigModal } from './CheckoutConfigModal';
 import { PlatformSelectorModal } from './PlatformSelectorModal';
 import { TrackingSnippetCard } from './TrackingSnippetCard';
@@ -62,11 +61,6 @@ export function CheckoutIntegrationsSection() {
     generateWebhookUrl,
   } = useCheckoutIntegrations();
 
-  const { canCreate: canCreateResource, isAtLimit, usage } = usePlanUsage();
-  const canAddIntegration = canCreateResource('integration');
-  const integrationLimitTooltip = isAtLimit('integration')
-    ? `Limite de integrações atingido (${usage?.integrations.used}/${usage?.integrations.limit}). Faça upgrade.`
-    : undefined;
 
   const handleEdit = (integration: CheckoutIntegration) => {
     setSelectedIntegration(integration);
@@ -122,9 +116,7 @@ export function CheckoutIntegrationsSection() {
       <Button
         variant="outline"
         size="sm"
-        onClick={() => canAddIntegration && setShowPlatformSelector(true)}
-        disabled={!canAddIntegration}
-        title={integrationLimitTooltip}
+        onClick={() => setShowPlatformSelector(true)}
       >
         <Plus className="mr-1.5 h-4 w-4" />
         Criar outro webhook
@@ -132,9 +124,7 @@ export function CheckoutIntegrationsSection() {
     ) : (
       <Button
         size="sm"
-        onClick={() => canAddIntegration && handlePlatformSelected(chosen)}
-        disabled={!canAddIntegration}
-        title={integrationLimitTooltip}
+        onClick={() => handlePlatformSelected(chosen)}
       >
         <Plus className="mr-1.5 h-4 w-4" />
         Criar webhook da {CHECKOUT_PLATFORMS[chosen].name}

@@ -307,17 +307,6 @@ export class HublaProcessor {
     for (const linha of linhas) {
       const gravada = await this.salesService.upsertFromWebhook(linha);
       if (!primeiraVenda) primeiraVenda = gravada;
-
-      // A atribuicao vale por linha: cada uma precisa apontar para o anuncio,
-      // senao o faturamento por anuncio perderia os bumps.
-      if (gravada?.id) {
-        this.webhooksService.matchAndUpdateSale(gravada.id, userId, {
-          adId,
-          utmCampaign,
-          utmContent,
-          utmTerm,
-        });
-      }
     }
 
     const sale = primeiraVenda;

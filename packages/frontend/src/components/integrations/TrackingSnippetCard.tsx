@@ -1,22 +1,18 @@
 import { useEffect, useState } from 'react';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { Link } from 'react-router-dom';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertTriangle, Check, CircleCheck, CircleDashed, Code2, Copy, Loader2 } from 'lucide-react';
+import { AlertTriangle, Bug, Check, CircleCheck, Code2, Copy, Loader2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
 import { errorMessage } from '@/lib/utils';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { absoluteApiUrl } from '@/lib/apiUrl';
-import { useTrackingStatus } from '@/hooks/useTracking';
 import { useCapiSettings } from '@/hooks/useCapi';
 import { findTrackingPlatform, TRACKING_PLATFORMS } from '@/lib/trackingPlatforms';
 import { UtmPatternStep } from './UtmPatternStep';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * O loader que o cliente cola na página de vendas. Cria a fila sentinel.q
@@ -59,7 +55,6 @@ export function TrackingSnippetCard({
   webhooks: (platformId: string | null) => React.ReactNode;
 }) {
   const { activeWorkspaceId } = useWorkspaceContext();
-  const { status, loading } = useTrackingStatus();
   const { settings, save, saving } = useCapiSettings();
   const [copied, setCopied] = useState(false);
   const [domain, setDomain] = useState('');
@@ -92,8 +87,6 @@ export function TrackingSnippetCard({
   const trackingDomain = savedDomain ?? (panelOnOwnDomain ? host : null);
   const scriptBase = trackingDomain ? `https://${trackingDomain}/api` : absoluteApiUrl();
   const snippet = buildSnippet(`${scriptBase}/t/tracker.js`, activeWorkspaceId);
-  const lastEvent = status?.lastEventAt ? new Date(status.lastEventAt) : null;
-  const active = !!lastEvent && Date.now() - lastEvent.getTime() < DAY_MS;
   const rootDomain = trackingDomain?.split('.').slice(1).join('.') || 'seusite.com.br';
   const showField = !!savedDomain || showOther || !trackingDomain;
 
@@ -150,21 +143,12 @@ export function TrackingSnippetCard({
             <Code2 className="h-4 w-4 text-accent-readable" strokeWidth={1.5} />
             <CardTitle>Checkout e rastreio</CardTitle>
           </div>
-          {!loading && (
-            <span className="inline-flex items-center gap-1.5 text-xs">
-              {active ? (
-                <>
-                  <CircleCheck className="h-3.5 w-3.5 text-green-500" aria-hidden />
-                  <span className="text-foreground">Rastreio ativo</span>
-                </>
-              ) : (
-                <>
-                  <CircleDashed className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
-                  <span className="text-muted-foreground">Nenhum evento nas últimas 24h</span>
-                </>
-              )}
-            </span>
-          )}
+          <Button asChild variant="outline" size="sm">
+            <Link to="/preview">
+              <Bug className="mr-1.5 h-4 w-4" />
+              Testar no preview
+            </Link>
+          </Button>
         </div>
         <CardDescription>
           O webhook traz as vendas do checkout; o código na página de vendas registra cada visita e leva um indexador
@@ -307,21 +291,6 @@ export function TrackingSnippetCard({
         <Step n={5} title="Padrão de UTM nos anúncios">
           <UtmPatternStep platform={platform} />
         </Step>
-
-        <div className="grid grid-cols-2 gap-3 rounded-lg border border-foreground/5 bg-foreground/[0.02] px-3 py-3 text-xs">
-          <div>
-            <p className="text-muted-foreground">Eventos hoje</p>
-            <p className="text-sm font-medium tabular-nums text-foreground">
-              {loading ? '—' : (status?.eventsToday ?? 0).toLocaleString('pt-BR')}
-            </p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Último evento</p>
-            <p className="text-sm font-medium text-foreground">
-              {lastEvent ? formatDistanceToNow(lastEvent, { addSuffix: true, locale: ptBR }) : '—'}
-            </p>
-          </div>
-        </div>
 
         <div className="space-y-1.5 text-xs text-muted-foreground">
           <p>

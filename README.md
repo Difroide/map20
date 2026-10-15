@@ -1,6 +1,8 @@
-# Dashboard de Tracking
+# Painel de Tracking
 
-Painel de ROI de Facebook Ads: cruza o gasto de mídia com as vendas reais dos checkouts brasileiros, rastreia os visitantes da página de vendas e manda PageView, InitiateCheckout e Purchase para a API de Conversões do Meta — tudo server-side, no domínio do cliente.
+Um GTM simplificado, só para o Meta: o snippet na página de vendas (o container web), os webhooks dos checkouts brasileiros (os clients do servidor) e a API de Conversões do Meta (as tags). PageView, InitiateCheckout e Purchase saem server-side, no domínio do cliente.
+
+E um **modo preview** no estilo do GTM: abra o site pelo painel e veja, ao vivo, cada passo no navegador (o que carregou, as variáveis, os links decorados, as tags do pixel) e cada requisição no servidor (o corpo que chegou, a venda que o checkout mandou, o `user_data` montado, a chamada ao Meta com a resposta, e o console).
 
 **Implantar leva uns 20 minutos, em 4 etapas.** Você precisa de conta no [Supabase](https://supabase.com), no [GitHub](https://github.com) e na [Vercel](https://vercel.com) (as três grátis), e acesso ao DNS do domínio do site.
 
@@ -121,18 +123,30 @@ No **Cloudflare**, deixe a nuvem **cinza** (*DNS only*). Com a nuvem laranja a V
 
 ---
 
-## Depois de entrar: Integrações
+## Depois de entrar
+
+Na barra lateral, **Novo container** cria a área: cada container tem o próprio snippet, pixel, webhooks e preview.
+
+### Integrações
 
 Tudo pela tela, nesta ordem:
 
-1. **Facebook Ads** — cole o access token do Meta; as contas de anúncio aparecem sozinhas.
+1. **API de Conversões do Meta** — ID do pixel e token de acesso. Para conferir no Meta, preencha o código de teste e veja os eventos em *Eventos de teste* no Gerenciador de Eventos; apague o código depois.
 2. **Checkout e rastreio** — um passo a passo só, no mesmo card:
    1. **Escolha seu checkout** — a plataforma onde você vende.
    2. **Domínio first-party** — aberto pelo seu domínio (Etapa 4), já vem pronto.
    3. **Código da página** — copie para antes do `</body>` da página de vendas.
    4. **Criar o webhook** — o botão abre o checkout escolhido; cole a URL e o token na plataforma, como a tela mostra.
    5. **Padrão de UTM** — cole no campo *Parâmetros de URL* de cada anúncio.
-3. **API de Conversões do Meta** — ID do pixel e token de acesso. Para testar, preencha o código de teste e veja os eventos em *Eventos de teste* no Gerenciador de Eventos; apague o código depois.
+
+### Preview e debug
+
+1. Cole a URL da página de vendas e clique **Abrir site em preview**. O site abre numa aba nova com `?stl_debug=…` e um selo "Preview" no canto; o modo vale para as próximas páginas do site por 1 hora (o `×` do selo sai dele).
+2. **Web** mostra o que o navegador fez, página a página: *Snippet carregado* (visitante, sessão, fbp/fbc e de onde vieram, UTMs, indexador), *PageView* e *InitiateCheckout* com as tags (pixel no navegador e envio ao servidor), os links de checkout decorados, os `dataLayer.push` da página e os avisos (pixel bloqueado, página sem link de checkout, pixel colado à mão).
+3. **Servidor** mostra cada requisição que chegou enquanto o preview está ligado — os `/collect` do snippet e **todos** os webhooks do checkout, inclusive os recusados. Em cada uma: *Tags* (Meta CAPI disparada, com falha ou não disparada, e por quê), *Request* (query, corpo e headers, com tokens mascarados), *Variáveis* (o visitante, a venda que o processor entendeu, a visita casada e o `user_data` campo a campo: original, normalizado e o hash enviado), *HTTP de saída* (o corpo mandado ao Graph e a resposta do Meta) e *Console*.
+4. Para depurar uma venda, faça um pedido de teste (ou reenvie o webhook pelo painel do checkout) com o preview ligado. "Ligar só o servidor" serve para isso sem abrir o site.
+
+O preview liga por 60 minutos e se renova enquanto a tela está aberta. Fora dele nada é gravado; o que foi gravado some em 24 horas.
 
 ---
 
@@ -142,9 +156,9 @@ Variáveis que você pode acrescentar na Vercel depois (Settings → Environment
 
 | Variável | Para quê |
 |---|---|
-| `CRON_SECRET` | Reenvio automático, uma vez por dia, dos eventos que o Meta recusou. Sem ela, o reenvio é pelo botão em Integrações. |
+| `CRON_SECRET` | Reenvio automático, uma vez por dia, dos eventos que o Meta recusou. |
 | `ENCRYPTION_KEY` | Chave que cifra os tokens salvos. Sem ela, é derivada da `service_role`. Defina **desde o início** se um dia for trocar a `service_role`: trocar a chave depois obriga a colar os tokens de novo. |
-| `META_API_VERSION` | Versão da Graph API do Meta (Ads e API de Conversões). Padrão: `v25.0`. Só preencha para usar outra. |
+| `META_API_VERSION` | Versão da Graph API do Meta (API de Conversões). Padrão: `v25.0`. Só preencha para usar outra. |
 
 Para gerar um valor aleatório para `CRON_SECRET` ou `ENCRYPTION_KEY`:
 
@@ -159,6 +173,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 Não rode o `schema_completo.sql` nem a migration base: os dois são para banco vazio.
 
 Em `supabase/migrations/`, a primeira migration (`20261002120000_base.sql`) é o banco inteiro até 2026-10-02. Toda mudança no banco depois disso vira uma migration nova, com data posterior. Para atualizar, rode no SQL Editor só as que vieram depois da última que você aplicou, em ordem de data.
+
+Vindo da versão com dashboard: rode `supabase/migrations/20261015120000_preview_debug.sql` (o modo preview). As tabelas do dashboard antigo (campanhas, financeiro, regras, planos…) ficam no banco sem uso; nada aqui as lê ou grava.
 
 Depois, `git push` para a Vercel publicar o código novo.
 
@@ -184,11 +200,16 @@ Ele refaz o `supabase/schema_completo.sql` a partir das migrations. Não edite o
 | Não aparece a aba de criar usuários | Seu e-mail não está em `ADMIN_EMAILS`. |
 | Domínio fica em *Invalid Configuration* | CNAME com nome ou valor errado, ou nuvem laranja no Cloudflare. |
 | "Esqueci minha senha" leva para outro endereço | Etapa 4.4 pendente. |
+| Preview diz "o banco ainda não tem o modo preview" | Rode `supabase/migrations/20261015120000_preview_debug.sql` no SQL Editor. |
+| Selo do preview diz "preview encerrado" | O preview foi desligado ou expirou. Clique **Abrir site em preview** de novo. |
+| Selo do preview não aparece | O snippet não está na página, ou o Do Not Track do navegador está ligado (o snippet não roda com ele). |
+| Aba Servidor vazia com o selo "conectado" | O `/collect` sai por `sendBeacon`; bloqueador de anúncio barra quando o snippet não está no seu subdomínio (Etapa 4). |
 
 ---
 
 ## Documentação
 
 - [`docs/features/`](docs/features/README.md) — cada funcionalidade, com regras de negócio e testes
+- [`docs/features/20-preview/preview-debug.md`](docs/features/20-preview/preview-debug.md) — o modo preview, web e servidor
 - [`docs/features/18-visitor-tracking/meta-capi.md`](docs/features/18-visitor-tracking/meta-capi.md) — rastreio, API de Conversões e as plataformas de checkout
 - `supabase/migrations/` — o histórico do banco; `node scripts/gerar-schema.js` regenera o `schema_completo.sql` a partir delas

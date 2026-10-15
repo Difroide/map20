@@ -369,15 +369,6 @@ export class KiwifyProcessor {
     // Route through SalesService for plan-limit enforcement
     const insertedSale = await this.salesService.upsertFromWebhook(saleData);
 
-    if (insertedSale?.id) {
-      this.webhooksService.matchAndUpdateSale(insertedSale.id, userId, {
-        adId,
-        utmCampaign,
-        utmContent,
-        utmTerm,
-      });
-    }
-
     const logData = {
       amount: Number(amount),
       customerName: customer.full_name || customer.name || null,

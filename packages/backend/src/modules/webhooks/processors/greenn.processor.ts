@@ -238,15 +238,6 @@ export class GreennProcessor {
 
     const upserted = await this.salesService.upsertFromWebhook(saleData);
 
-    if (upserted?.id) {
-      this.webhooksService.matchAndUpdateSale(upserted.id, userId, {
-        adId,
-        utmCampaign,
-        utmContent,
-        utmTerm,
-      });
-    }
-
     this.discordLogger.logSale('greenn', {
       amount,
       customerName: client.name || null,

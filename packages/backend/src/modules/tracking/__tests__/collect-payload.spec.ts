@@ -38,19 +38,11 @@ describe('parseCollectBody', () => {
     expect(batch!.events.map((e) => e.type)).toEqual(['pageview']);
   });
 
-  it('le o sorteio do teste A/B e descarta par com id torto', () => {
-    const TEST = 'abababab-0000-4000-8000-000000000001';
-    const VAR = 'abababab-0000-4000-8000-00000000000b';
-    const batch = parseCollectBody(body([{ type: 'pageview' }], {
-      ab: { [TEST]: VAR, 'nao-e-uuid': VAR, [VAR]: '<script>' },
-    }));
-    expect(batch!.ab).toEqual([{ test_id: TEST, variant_id: VAR }]);
-  });
-
-  it('sem sorteio (ou com lixo no lugar), o lote nao ganha o campo ab', () => {
-    expect(parseCollectBody(body([{ type: 'pageview' }]))).not.toHaveProperty('ab');
-    expect(parseCollectBody(body([{ type: 'pageview' }], { ab: ['x'] }))).not.toHaveProperty('ab');
-    expect(parseCollectBody(body([{ type: 'pageview' }], { ab: 'x' }))).not.toHaveProperty('ab');
+  it('le o token do preview so no formato certo', () => {
+    const token = 'a'.repeat(48);
+    expect(parseCollectBody(body([{ type: 'pageview' }], { dbg: token }))!.debugToken).toBe(token);
+    expect(parseCollectBody(body([{ type: 'pageview' }], { dbg: '<script>' }))!.debugToken).toBeNull();
+    expect(parseCollectBody(body([{ type: 'pageview' }]))!.debugToken).toBeNull();
   });
 
   it('limita o tamanho do lote', () => {

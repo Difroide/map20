@@ -5,29 +5,22 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { SharedModule } from './shared/shared.module';
 import { WebhooksModule } from './modules/webhooks/webhooks.module';
-import { FacebookModule } from './modules/facebook/facebook.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
-import { FinancialModule } from './modules/financial/financial.module';
-import { PlansModule } from './modules/plans/plans.module';
-import { AdminModule } from './modules/admin/admin.module';
-import { SalesModule } from './modules/sales/sales.module';
-import { MetricsModule } from './modules/metrics/metrics.module';
-import { UtilsModule } from './modules/utils/utils.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { HealthModule } from './modules/health/health.module';
-import { AutomationRulesModule } from './modules/automation-rules/automation-rules.module';
-import { PlanLimitsModule } from './modules/plan-limits/plan-limits.module';
-import { SubscriptionsModule } from './modules/subscriptions/subscriptions.module';
-import { StripeModule } from './modules/stripe/stripe.module';
 import { UsersModule } from './modules/users/users.module';
-import { AccountModule } from './modules/account/account.module';
 import { TrackingModule } from './modules/tracking/tracking.module';
 import { MetaCapiModule } from './modules/meta-capi/meta-capi.module';
-import { AbTestsModule } from './modules/ab-tests/ab-tests.module';
+import { DebugModule } from './modules/debug/debug.module';
 
 const RATE_LIMIT_TTL_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 60;
 
+/**
+ * Um GTM simplificado: o snippet (client web), os webhooks dos checkouts
+ * (clients do servidor), a API de Conversões do Meta (as tags) e o modo
+ * preview, que mostra tudo isso acontecendo.
+ */
 @Module({
   imports: [
     // Local: o .env do backend, ou o .env.local da raiz (o mesmo que o
@@ -37,25 +30,13 @@ const RATE_LIMIT_MAX_REQUESTS = 60;
     ThrottlerModule.forRoot([{ ttl: RATE_LIMIT_TTL_MS, limit: RATE_LIMIT_MAX_REQUESTS }]),
     SharedModule,
     WebhooksModule,
-    FacebookModule,
     WorkspacesModule,
-    FinancialModule,
-    PlansModule,
-    AdminModule,
-    SalesModule,
-    MetricsModule,
-    UtilsModule,
     IntegrationsModule,
     HealthModule,
-    AutomationRulesModule,
-    PlanLimitsModule,
-    SubscriptionsModule,
-    StripeModule,
     UsersModule,
-    AccountModule,
     TrackingModule,
     MetaCapiModule,
-    AbTestsModule,
+    DebugModule,
   ],
   providers: [
     {

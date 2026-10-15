@@ -258,15 +258,6 @@ export class EduzzProcessor {
 
     const sale = await this.salesService.upsertFromWebhook(saleData);
 
-    if (sale?.id) {
-      this.webhooksService.matchAndUpdateSale(sale.id, userId, {
-        adId,
-        utmCampaign,
-        utmContent,
-        utmTerm,
-      });
-    }
-
     this.discordLogger.logSale('eduzz', {
       amount,
       customerName: buyer.name || null,

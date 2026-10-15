@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../shared/services/supabase.service';
+import { debugContext } from '../debug/debug-context';
 
 /**
  * Liga uma venda recém-gravada à visita que levou a ela.
@@ -34,7 +35,13 @@ export class VisitorMatchingService {
       }
       if (data) {
         this.logger.log(`[matchSale] ${saleId} ligada a sessao ${data.session_id} por ${data.method}`);
+      } else {
+        debugContext.getStore()?.log(
+          `Venda ${saleId} não casou com nenhuma visita: o indexador stl_ não veio no webhook e e-mail/telefone não bateram.`,
+          'warn',
+        );
       }
+      debugContext.getStore()?.variable('Casamento com a visita', data ?? 'nenhum');
     } catch (err: any) {
       this.logger.warn(`[matchSale] ${saleId}: ${err?.message}`);
     }

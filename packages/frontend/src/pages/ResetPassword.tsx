@@ -107,7 +107,7 @@ export default function ResetPassword() {
 
       // Redirect to dashboard after 2 seconds
       setTimeout(() => {
-        navigate('/dashboard');
+        navigate('/preview');
       }, 2000);
     } catch (error: any) {
       console.error('Reset password error:', error);

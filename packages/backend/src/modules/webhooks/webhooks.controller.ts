@@ -14,6 +14,8 @@ import { WebhookParamsDto } from './dto/webhook-params.dto';
 import { WebhookQueueService } from './webhook-queue.service';
 import { N8nProfilesProcessor } from './processors/n8n-profiles.processor';
 import { GENERIC_PLATFORMS } from './processors/generic/checkout-specs';
+import { DebugService } from '../debug/debug.service';
+import { debugContext, DebugTrace } from '../debug/debug-context';
 
 /** Platforms that process synchronously in the controller (not via WebhookQueueService). */
 const CONTROLLER_PROCESSORS: Record<string, true> = {
@@ -64,14 +66,58 @@ export class WebhooksController {
   constructor(
     private readonly webhookQueue: WebhookQueueService,
     private readonly n8nProfiles: N8nProfilesProcessor,
+    private readonly debug: DebugService,
   ) {}
 
+  /**
+   * Cada webhook roda dentro de um rastro de debug. Com a área em preview, o
+   * painel mostra o corpo recebido, a venda que o processor extraiu, o
+   * Purchase que saiu (ou por que não saiu) e o console.
+   */
   @Post(':platform')
   async handleWebhook(
     @Param() params: WebhookParamsDto,
     @Body() body: any,
     @Req() req: FastifyRequest,
     @Res() res: FastifyReply,
+  ): Promise<void> {
+    const headers = req.headers as Record<string, string | string[] | undefined>;
+    const trace = new DebugTrace('webhook', `Webhook — ${platformName(params.platform)}`, {
+      method: 'POST',
+      path: `/api/webhooks/${params.platform}`,
+      query: (req.query as Record<string, unknown>) ?? {},
+      headers,
+      body: (req as any).rawBody ?? body,
+    });
+
+    // O Fastify manda a resposta quando send() é chamado; aqui ela é
+    // interceptada para entrar no rastro, e o rastro é gravado antes de a
+    // resposta sair (na Vercel nada roda depois dela).
+    let reply: { status: number; body: any } = { status: 200, body: null };
+    const capture = {
+      status: (code: number) => ({
+        send: (payload: any) => {
+          reply = { status: code, body: payload };
+        },
+      }),
+    } as unknown as FastifyReply;
+
+    await debugContext.run(trace, () => this.process(params, body, req, capture));
+
+    const token = extractWebhookToken({ headers }, body, params.platform) ?? (req.query as any)?.token ?? null;
+    trace.respond(reply.status, reply.body);
+    if (trace.events.length === 0) trace.event(`HTTP ${reply.status}`);
+    trace.title = `${platformName(params.platform)} — ${trace.events.join(', ')}`;
+    await this.debug.saveServerTrace(trace, token);
+
+    res.status(reply.status).send(reply.body);
+  }
+
+  private async process(
+    params: WebhookParamsDto,
+    body: any,
+    req: FastifyRequest,
+    res: FastifyReply,
   ): Promise<void> {
     const { platform } = params;
     this.logger.log(`Webhook received for platform: ${platform}`);
@@ -150,4 +196,27 @@ export class WebhooksController {
     }
     return { status: 404, body: { error: `Unknown sync platform: ${platform}` } };
   }
+}
+
+const PLATFORM_NAMES: Record<string, string> = {
+  hotmart: 'Hotmart',
+  kiwify: 'Kiwify',
+  kirvano: 'Kirvano',
+  guru: 'Guru',
+  perfectpay: 'Perfect Pay',
+  ticto: 'Ticto',
+  cakto: 'Cakto',
+  payt: 'PayT',
+  hubla: 'Hubla',
+  cartpanda: 'CartPanda',
+  ggcheckout: 'GG Checkout',
+  lastlink: 'LastLink',
+  eduzz: 'Eduzz',
+  mundpay: 'Mundpay',
+  monetizze: 'Monetizze',
+  greenn: 'Greenn',
+};
+
+function platformName(platform: string): string {
+  return PLATFORM_NAMES[platform] ?? platform.charAt(0).toUpperCase() + platform.slice(1);
 }

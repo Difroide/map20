@@ -154,15 +154,6 @@ export class GenericCheckoutProcessor {
     const adId =
       this.webhooksService.extractNumericAdId(parsed.utmContent) ||
       this.webhooksService.extractNumericAdId(parsed.utmTerm);
-    if (sale?.id) {
-      // Aguardado: na Vercel a função congela quando o webhook responde.
-      await this.webhooksService.matchAndUpdateSale(sale.id, integration.user_id, {
-        adId,
-        utmCampaign: parsed.utmCampaign,
-        utmContent: parsed.utmContent,
-        utmTerm: parsed.utmTerm,
-      });
-    }
 
     this.discordLogger.logSale(platform, {
       amount,
