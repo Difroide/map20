@@ -4,7 +4,7 @@ import { CacheService } from '../../shared/services/cache.service';
 import { EncryptionService } from '../../shared/services/encryption.service';
 import { buildUserData, MetaUserData, explainUserData, UserDataInput } from './meta-user-data';
 import { META_API_VERSION } from '../../shared/constants/meta-api';
-import { debugContext } from '../debug/debug-context';
+import { debugContext, traced } from '../debug/debug-context';
 
 const GRAPH_VERSION = META_API_VERSION;
 const CONFIG_TTL_MS = 60_000;
@@ -338,7 +338,7 @@ export class MetaCapiService {
       payload: event,
     };
     const reserve = (row: Record<string, unknown>) =>
-      client.from('capi_events').insert(row).select('id').maybeSingle();
+      traced('capi_events', 'insert', row, () => client.from('capi_events').insert(row).select('id').maybeSingle());
     let { data: reserved, error: reserveError } = await reserve(this.withPixel(reservation, config.pixelId));
     if (this.missingPixelColumn(reserveError)) {
       ({ data: reserved, error: reserveError } = await reserve(reservation));
@@ -362,17 +362,17 @@ export class MetaCapiService {
     trace?.variable('user_data — Purchase', explainUserData(purchaseUserInput(first, session, withSession), event.user_data));
 
     const result = await this.post(config, [event]);
-    await client
-      .from('capi_events')
-      .update({
-        status: result.ok ? 'sent' : 'failed',
-        attempts: 1,
-        response: result.response,
-        fbtrace_id: result.fbtraceId,
-        error: result.error,
-        sent_at: result.ok ? new Date().toISOString() : null,
-      })
-      .eq('id', reserved!.id);
+    const sentUpdate = {
+      status: result.ok ? 'sent' : 'failed',
+      attempts: 1,
+      response: result.response,
+      fbtrace_id: result.fbtraceId,
+      error: result.error,
+      sent_at: result.ok ? new Date().toISOString() : null,
+    };
+    await traced('capi_events', 'update', { id: reserved!.id, ...sentUpdate }, () =>
+      client.from('capi_events').update(sentUpdate).eq('id', reserved!.id),
+    );
 
     this.logger.log(
       `[CAPI] Purchase ${orderId} ${result.ok ? 'enviado' : `falhou: ${result.error}`} (sessao: ${session ? 'sim' : 'nao'})`,
@@ -655,10 +655,12 @@ export class MetaCapiService {
   private async record(rows: Record<string, unknown>[]): Promise<void> {
     // Um reenvio do mesmo lote pelo navegador bateria na unicidade; ignora.
     const upsert = (batch: Record<string, unknown>[]) =>
-      this.supabase
-        .getClient()
-        .from('capi_events')
-        .upsert(batch, { onConflict: 'workspace_id,event_name,event_id', ignoreDuplicates: true });
+      traced('capi_events', 'upsert', batch, () =>
+        this.supabase
+          .getClient()
+          .from('capi_events')
+          .upsert(batch, { onConflict: 'workspace_id,event_name,event_id', ignoreDuplicates: true }),
+      );
     let { error } = await upsert(this.pixelColumn ? rows : rows.map((r) => this.withoutPixel(r)));
     if (this.missingPixelColumn(error)) ({ error } = await upsert(rows.map((r) => this.withoutPixel(r))));
     if (error) this.logger.warn(`Registro da CAPI: ${error.message}`);

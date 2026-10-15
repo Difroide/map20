@@ -252,15 +252,25 @@ describe('Rotas públicas do rastreio (HTTP)', () => {
       expect(row.data.request.path).toBe('/api/t/collect');
       expect(row.data.variables.Visitante).toMatchObject({ visitor_id: VID, fbp: FBP, ip: '7.7.7.7' });
       expect(row.data.tags).toContainEqual(expect.objectContaining({ name: 'Gravar visita no banco', status: 'fired' }));
+      // A gravação aparece com os dados escritos e o que o banco devolveu.
+      expect(row.data.db).toEqual([
+        expect.objectContaining({
+          table: 'tracking_visitors + tracking_sessions + tracking_events',
+          operation: 'rpc',
+          data: expect.objectContaining({ p_visitor_id: VID, p_ctx: expect.objectContaining({ ip_address: '7.7.7.7', fbp: FBP }) }),
+          result: 1,
+          error: null,
+        }),
+      ]);
       expect(row.data.response).toEqual({ status: 200, body: '' });
     });
 
-    it('robo tambem aparece no preview, como descartado', async () => {
+    it('so requisicoes com evento do Meta: saida de pagina e robo nao entram no preview', async () => {
       previewOn();
+      await collect({ tid: TID, vid: VID, sid: SID, events: [{ type: 'page_exit', duration_seconds: 5 }] });
       await collect({ tid: TID, vid: VID, sid: SID, events: [{ type: 'pageview' }] }, { 'user-agent': 'facebookexternalhit/1.1' });
-      const [, row] = insert.mock.calls.find((c) => c[0] === 'debug_traces')!;
-      expect(row.title).toBe('Descartado — robô');
-      expect(row.status).toBe('warning');
+      expect(insert.mock.calls.filter((c) => c[0] === 'debug_traces')).toHaveLength(0);
+      expect(rpc).toHaveBeenCalledTimes(1); // a saída foi gravada normalmente
     });
 
     it('mensagens do navegador entram so com o token do preview ligado', async () => {

@@ -43,6 +43,16 @@ export interface DebugHttpCall {
   error?: string | null;
 }
 
+/** Uma gravação no banco: tabela, o que foi escrito e o que o banco devolveu. */
+export interface DebugDbWrite {
+  table: string;
+  operation: 'insert' | 'upsert' | 'update' | 'rpc';
+  data: unknown;
+  result: unknown;
+  error?: string | null;
+  durationMs: number;
+}
+
 export interface DebugLogLine {
   level: 'log' | 'warn' | 'error' | 'debug';
   message: string;
@@ -59,6 +69,8 @@ export interface ServerTraceData {
   variables: Record<string, unknown>;
   tags: DebugTag[];
   http: DebugHttpCall[];
+  /** Rastros gravados antes desta versão não têm. */
+  db?: DebugDbWrite[];
   logs: DebugLogLine[];
   durationMs: number;
 }

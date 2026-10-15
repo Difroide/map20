@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../shared/services/supabase.service';
 import { CacheService } from '../../shared/services/cache.service';
 import { CollectBatch, deviceType } from './collect-payload';
+import { traced } from '../debug/debug-context';
 
 /** Existência da área muda quase nunca; 5 minutos poupa o banco a cada tracker.js. */
 const WORKSPACE_CACHE_TTL_MS = 5 * 60_000;
@@ -36,7 +37,7 @@ export class TrackingIngestService {
    */
   async ingest(batch: CollectBatch, ctx: RequestContext): Promise<number> {
     try {
-      const { data, error } = await this.supabase.getClient().rpc('tracking_ingest', {
+      const params = {
         p_workspace_id: batch.workspaceId,
         p_visitor_id: batch.visitorId,
         p_session_id: batch.sessionId,
@@ -53,7 +54,14 @@ export class TrackingIngestService {
           ip_address: ctx.ip,
         },
         p_events: batch.events,
-      });
+      };
+      // O RPC grava visitante, sessão e eventos numa ida só.
+      const { data, error } = await traced(
+        'tracking_visitors + tracking_sessions + tracking_events',
+        'rpc',
+        params,
+        () => this.supabase.getClient().rpc('tracking_ingest', params),
+      );
 
       if (error) {
         this.logger.warn(`tracking_ingest falhou: ${error.message}`);

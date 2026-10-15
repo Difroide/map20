@@ -32,6 +32,16 @@ export interface DebugHttpCall {
   error?: string | null;
 }
 
+/** Uma gravação no banco feita durante a requisição: o que foi escrito e o que voltou. */
+export interface DebugDbWrite {
+  table: string;
+  operation: 'insert' | 'upsert' | 'update' | 'rpc';
+  data: unknown;
+  result: unknown;
+  error?: string | null;
+  durationMs: number;
+}
+
 export interface DebugLogLine {
   level: 'log' | 'warn' | 'error' | 'debug';
   message: string;
@@ -56,6 +66,7 @@ export interface DebugTraceData {
   variables: Record<string, unknown>;
   tags: DebugTag[];
   http: DebugHttpCall[];
+  db: DebugDbWrite[];
   logs: DebugLogLine[];
   durationMs: number;
 }
@@ -129,6 +140,7 @@ export class DebugTrace {
       variables: {},
       tags: [],
       http: [],
+      db: [],
       logs: [],
     };
   }
@@ -155,6 +167,11 @@ export class DebugTrace {
     return this.data.http.length - 1;
   }
 
+  db(write: DebugDbWrite): void {
+    if (this.data.db.length >= 50) return;
+    this.data.db.push({ ...write, data: limitBody(write.data), result: limitBody(write.result) });
+  }
+
   log(message: string, level: DebugLogLine['level'] = 'log', context?: string | null): void {
     if (this.data.logs.length >= 300) return;
     this.data.logs.push({ level, message: message.slice(0, 4000), context: context ?? null, at: Date.now() - this.startedAt });
@@ -167,7 +184,7 @@ export class DebugTrace {
   /** ok / warning / error, para a cor na lista do painel. */
   get status(): 'ok' | 'warning' | 'error' {
     const status = this.data.response?.status ?? 200;
-    if (status >= 500 || this.data.tags.some((t) => t.status === 'failed')) return 'error';
+    if (status >= 500 || this.data.tags.some((t) => t.status === 'failed') || this.data.db.some((w) => w.error)) return 'error';
     if (status >= 400 || this.data.logs.some((l) => l.level === 'error')) return 'error';
     if (this.data.logs.some((l) => l.level === 'warn')) return 'warning';
     return 'ok';
@@ -183,3 +200,20 @@ export class DebugTrace {
 }
 
 export const debugContext = new AsyncLocalStorage<DebugTrace>();
+
+/**
+ * Roda uma gravação e, no preview, registra no rastro o que foi escrito e o
+ * que o banco devolveu. Fora do preview é só a gravação.
+ */
+export async function traced<T extends { data?: unknown; error?: { message: string } | null }>(
+  table: string,
+  operation: DebugDbWrite['operation'],
+  data: unknown,
+  run: () => PromiseLike<T>,
+): Promise<T> {
+  const trace = debugContext.getStore();
+  const started = Date.now();
+  const res = await run();
+  trace?.db({ table, operation, data, result: res.data ?? null, error: res.error?.message ?? null, durationMs: Date.now() - started });
+  return res;
+}

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SupabaseService } from '../../shared/services/supabase.service';
-import { debugContext } from '../debug/debug-context';
+import { debugContext, traced } from '../debug/debug-context';
 
 /**
  * Liga uma venda recém-gravada à visita que levou a ela.
@@ -25,9 +25,9 @@ export class VisitorMatchingService {
    */
   async matchSale(saleId: string): Promise<void> {
     try {
-      const { data, error } = await this.supabase
-        .getClient()
-        .rpc('tracking_match_sale', { p_sale_id: saleId });
+      const { data, error } = await traced('sales (liga à visita)', 'rpc', { p_sale_id: saleId }, () =>
+        this.supabase.getClient().rpc('tracking_match_sale', { p_sale_id: saleId }),
+      );
 
       if (error) {
         this.logger.warn(`[matchSale] ${saleId}: ${error.message}`);

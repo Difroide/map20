@@ -41,8 +41,8 @@ export function WebDebug({ traces }: { traces: WebTrace[] }) {
   if (traces.length === 0) {
     return (
       <Empty>
-        Nenhuma mensagem do navegador ainda. Abra o site pelo botão "Abrir site em preview": a página carrega com o selo
-        "Preview" no canto, e cada passo aparece aqui.
+        Nenhum evento do navegador ainda. Abra o site pelo botão "Abrir site em preview": a página carrega com o selo
+        "Preview" no canto, e o PageView e o InitiateCheckout aparecem aqui.
       </Empty>
     );
   }

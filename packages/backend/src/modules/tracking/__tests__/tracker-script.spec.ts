@@ -535,7 +535,7 @@ describe('tracker.js', () => {
       expect(page.beacons[0].dbg).toBeUndefined();
     });
 
-    it('com ?stl_debug: mostra o selo, tira o token da URL e manda snippet carregado e PageView', async () => {
+    it('com ?stl_debug: mostra o selo, tira o token da URL e manda o PageView com os dados do Meta', async () => {
       const page = loadPage(PREVIEW_URL, '<a href="https://pay.hotmart.com/X123">Comprar</a>', { pixel: '123456789' });
       await ready(page);
       await wait(400);
@@ -545,14 +545,14 @@ describe('tracker.js', () => {
 
       const body = page.debug[0];
       expect(body).toEqual(expect.objectContaining({ tid: TID, dbg: DEBUG_TOKEN }));
-      const types = messages(page).map((m) => m.type);
-      expect(types).toEqual(expect.arrayContaining(['container', 'pageview', 'decorate']));
+      expect(messages(page).map((m) => m.type)).toEqual(['pageview']);
 
       const pv = messages(page).find((m) => m.type === 'pageview');
       expect(pv.data.tags).toEqual([
         expect.objectContaining({ name: 'Meta Pixel — PageView (navegador)', status: 'fired' }),
         expect.objectContaining({ name: 'Enviar ao servidor → Meta CAPI — PageView', status: 'fired' }),
       ]);
+      expect(pv.data.vars).toMatchObject({ pixel: '123456789', fbp: expect.stringMatching(/^fb\.1\./) });
       // O event_id do painel é o mesmo que foi ao /collect.
       expect(pv.data.event.event_id).toBe(events(page).find((e) => e.type === 'pageview').event_id);
     });
@@ -603,20 +603,17 @@ describe('tracker.js', () => {
       expect(ic.data.tags[0]).toEqual(expect.objectContaining({ status: 'not_fired' }));
     });
 
-    it('mostra os dataLayer.push da pagina, inclusive os de antes do snippet', async () => {
-      const dom = loadPage(PREVIEW_URL);
-      await ready(dom);
-      dom.w.dataLayer.push({ event: 'lead', valor: 10 });
-      await wait(400);
-      const dl = messages(dom).filter((m) => m.type === 'datalayer');
-      expect(dl.map((m) => m.title)).toContain('dataLayer: lead');
-    });
-
-    it('avisa quando a pagina nao tem link de checkout', async () => {
-      const page = loadPage(PREVIEW_URL, '<p>sem botao</p>');
+    it('so eventos do Meta: saida de pagina, dataLayer e evento proprio nao vao ao painel', async () => {
+      const page = loadPage(PREVIEW_URL);
       await ready(page);
+      page.w.dataLayer = [];
+      page.w.dataLayer.push({ event: 'lead' });
+      page.w.sentinel('track', 'video_play');
+      page.hide();
       await wait(400);
-      expect(messages(page).some((m) => m.type === 'warning')).toBe(true);
+      expect(messages(page).map((m) => m.type)).toEqual(['pageview']);
+      // A saída continua indo ao /collect: só não aparece no preview.
+      expect(events(page).some((ev) => ev.type === 'page_exit')).toBe(true);
     });
 
     it('preview encerrado no painel: o selo diz isso', async () => {

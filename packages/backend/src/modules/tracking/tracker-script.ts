@@ -40,11 +40,10 @@
  * ?stl_debug=<token> entra em modo debug, que dura enquanto o cookie
  * _stl_dbg (1 hora) existir — vale para as próximas páginas do site também.
  * Nele o snippet mostra um selo no canto da página e manda ao painel
- * (POST /api/t/debug) cada passo, no formato do Tag Assistant: o que
- * carregou, as variáveis, os eventos, as tags que dispararam no navegador,
- * os links decorados, os dataLayer.push da página e os erros. O /collect
- * leva o mesmo token, e o preview do servidor marca as requisições deste
- * navegador. ?stl_debug=off sai do modo.
+ * (POST /api/t/debug) só os eventos do Meta — PageView e InitiateCheckout,
+ * com os dados e as tags do pixel e do servidor — e o erro do pixel que não
+ * carregou. O /collect leva o mesmo token, e o preview do servidor marca as
+ * requisições deste navegador. ?stl_debug=off sai do modo.
  */
 
 const SOURCE = `(function (w, d) {
@@ -193,6 +192,10 @@ const SOURCE = `(function (w, d) {
       : { name: 'Meta Pixel — ' + name + ' (navegador)', status: 'not_fired', detail: 'Sem ID do pixel em Integrações.' };
   }
 
+  function metaVars() {
+    return { pixel: PIXEL || 'não configurado', external_id: vid, fbp: fbp, fbc: fbc || '(sem clique de anúncio)', session_id: sid, indexador: PARAM + '=stl_' + sid };
+  }
+
   function serverTag(name, id) {
     return { name: 'Enviar ao servidor → Meta CAPI — ' + name, status: 'fired', detail: 'POST ' + ENDPOINT + ' · event_id ' + id };
   }
@@ -226,8 +229,8 @@ const SOURCE = `(function (w, d) {
   }
 
   var queue = [], timer = null, sid = null;
-  var vid = getCookie('_stl_vid'), vidNew = !UUID.test(vid || '');
-  if (vidNew) vid = uuid();
+  var vid = getCookie('_stl_vid');
+  if (!UUID.test(vid || '')) vid = uuid();
   setCookie('_stl_vid', vid, YEAR);
   var utm = readParams();
   var arrival = readQuery();
@@ -244,17 +247,15 @@ const SOURCE = `(function (w, d) {
   }
 
   var now0 = new Date().getTime();
-  var fbp = getCookie('_fbp'), fbpFrom = 'cookie _fbp da página';
+  var fbp = getCookie('_fbp');
   if (!/^fb\\.\\d\\.\\d+\\.\\d+$/.test(fbp || '')) {
     fbp = 'fb.1.' + now0 + '.' + Math.floor(1000000000 + Math.random() * 8999999999);
-    fbpFrom = 'criado pelo snippet';
     setCookie('_fbp', fbp, FB_TTL);
   }
-  var fbc = getCookie('_fbc'), fbcFrom = fbc ? 'cookie _fbc da página' : 'sem fbclid: não há clique de anúncio';
+  var fbc = getCookie('_fbc');
   var fbclid = urlParam(location.search, 'fbclid');
   if (fbclid && (!fbc || fbc.slice(-fbclid.length - 1) !== '.' + fbclid)) {
     fbc = 'fb.1.' + now0 + '.' + fbclid;
-    fbcFrom = 'criado do fbclid da URL';
     setCookie('_fbc', fbc, FB_TTL);
   }
 
@@ -311,21 +312,18 @@ const SOURCE = `(function (w, d) {
   }
 
   function touchSession() {
-    var cur = getCookie('_stl_sid'), fresh = false;
+    var cur = getCookie('_stl_sid');
     if (!UUID.test(cur || '')) {
       if (queue.length) flush();
       cur = uuid();
-      fresh = true;
     }
-    var changed = cur !== sid, first = sid === null;
+    var changed = cur !== sid;
     sid = cur;
     setCookie('_stl_sid', sid, SESSION);
     if (changed) {
       markPage();
       if (ready) scheduleDecorate();
-      if (!first) msg('session', 'Nova sessão', { vars: { session_id: sid, motivo: '30 minutos sem atividade' } });
     }
-    return fresh;
   }
 
   function enqueue(ev, now) {
@@ -378,9 +376,7 @@ const SOURCE = `(function (w, d) {
   function exit() {
     if (exited) return;
     exited = true;
-    var secs = Math.round((new Date().getTime() - start) / 1000);
-    enqueue(event('page_exit', { duration_seconds: secs }), true);
-    msg('exit', 'Saída da página', { vars: { segundos_na_pagina: secs } });
+    enqueue(event('page_exit', { duration_seconds: Math.round((new Date().getTime() - start) / 1000) }), true);
     dbgFlush(true);
   }
 
@@ -416,13 +412,9 @@ const SOURCE = `(function (w, d) {
     return href + (href.indexOf('?') >= 0 ? '&' : '?') + add.join('&') + hash;
   }
 
-  var decorated = [];
   function decorate(a) {
-    var before = a.href, next = decorateUrl(before);
-    if (next !== before) {
-      a.href = next;
-      if (dbg && decorated.length < 20) decorated.push({ antes: before, depois: next });
-    }
+    var next = decorateUrl(a.href);
+    if (next !== a.href) a.href = next;
   }
 
   function checkout(url, via) {
@@ -432,28 +424,18 @@ const SOURCE = `(function (w, d) {
     enqueue(event('checkout_click', { event_id: id, props: { href: dest.split('?')[0] } }), true);
     mirror('InitiateCheckout', id);
     msg('checkout', 'InitiateCheckout', {
-      vars: { destino: dest, detectado_por: via, indexador: PARAM + '=stl_' + sid },
+      vars: (function (v) { v.destino = dest; v.detectado_por = via; return v; })(metaVars()),
       event: { event_name: 'InitiateCheckout', event_id: id },
       tags: [pixelTag('InitiateCheckout', id), serverTag('InitiateCheckout', id)]
     });
   }
 
-  var checkoutLinks = 0;
   function decorateAll() {
     decorateTimer = null;
-    var links = d.getElementsByTagName('a'), i, found = 0;
+    var links = d.getElementsByTagName('a'), i;
     for (i = 0; i < links.length; i++) {
-      if (links[i].hasAttribute && links[i].hasAttribute('data-stl-debug')) continue;
-      if (isCheckout(links[i], links[i].hasAttribute && links[i].hasAttribute('data-sentinel-checkout'))) {
-        found++;
-        decorate(links[i]);
-      }
+      if (isCheckout(links[i], links[i].hasAttribute && links[i].hasAttribute('data-sentinel-checkout'))) decorate(links[i]);
     }
-    if (decorated.length) {
-      msg('decorate', 'Links de checkout decorados', { vars: { indexador: PARAM + '=stl_' + sid, links: decorated } });
-      decorated = [];
-    }
-    checkoutLinks = Math.max(checkoutLinks, found);
   }
 
   function scheduleDecorate() {
@@ -529,33 +511,11 @@ const SOURCE = `(function (w, d) {
     if (!name) return;
     if (name === 'checkout_click') { checkout(location.href, "sentinel('track')"); return; }
     enqueue(event('custom', { name: String(name), props: props || null }));
-    msg('custom', 'Evento: ' + String(name), {
-      vars: { nome: String(name), props: props || null },
-      tags: [{ name: 'Enviar ao servidor (gravado, sem CAPI)', status: 'fired', detail: 'Eventos próprios ficam na visita; só PageView, InitiateCheckout e Purchase vão ao Meta.' }]
-    });
   }
 
   function api(cmd) {
     if (cmd === 'track') track(arguments[1], arguments[2]);
     else if (cmd === 'checkout') goCheckout(arguments[1]);
-  }
-
-  function watchDataLayer() {
-    if (!dbg) return;
-    var dl = w.dataLayer = w.dataLayer || [], i, orig;
-    function report(o) {
-      var name;
-      try { name = o && typeof o === 'object' && !o.length && o.event ? String(o.event) : 'push'; } catch (e) { name = 'push'; }
-      var data;
-      try { data = JSON.parse(JSON.stringify(o)); } catch (e) { data = String(o); }
-      msg('datalayer', 'dataLayer: ' + name, { vars: { 'dataLayer.push': data } });
-    }
-    for (i = 0; i < dl.length; i++) report(dl[i]);
-    orig = dl.push;
-    dl.push = function () {
-      for (var j = 0; j < arguments.length; j++) report(arguments[j]);
-      return orig.apply(dl, arguments);
-    };
   }
 
   function pageview() {
@@ -565,17 +525,14 @@ const SOURCE = `(function (w, d) {
     enqueue(pv, true);
     mirror('PageView', id);
     msg('pageview', 'PageView', {
+      vars: metaVars(),
       event: pv,
-      tags: [pixelTag('PageView', id), serverTag('PageView', id)]
+      tags: [pixelTag('PageView', id), serverTag('PageView', id)],
+      level: pageFbq && PIXEL ? 'warning' : undefined,
+      aviso: pageFbq && PIXEL ? 'Já existe um fbq na página (pixel colado à mão?). O snippet dispara só no pixel da área, mas o PageView do código colado conta à parte.' : undefined
     });
     ready = true;
     decorateAll();
-    if (dbg && !checkoutLinks) {
-      msg('warning', 'Nenhum link de checkout na página', {
-        level: 'warning',
-        vars: { dica: "Se o botão aparece depois (vídeo) ou redireciona por script, ele é pego no clique. Botão para um domínio fora da lista? Marque com data-sentinel-checkout ou use sentinel('checkout', url)." }
-      });
-    }
     if (w.MutationObserver) {
       new w.MutationObserver(scheduleDecorate).observe(d.documentElement, {
         childList: true, subtree: true, attributes: true, attributeFilter: ['href']
@@ -583,29 +540,7 @@ const SOURCE = `(function (w, d) {
     }
   }
 
-  var sessionFresh = touchSession();
-
-  msg('container', 'Snippet carregado', {
-    vars: {
-      area: TID,
-      endpoint: ENDPOINT,
-      parametro_do_indexador: PARAM,
-      indexador: PARAM + '=stl_' + sid,
-      pixel: PIXEL || 'não configurado',
-      xcod_utm: XCOD_UTM,
-      visitor_id: vid + (vidNew ? ' (novo)' : ' (cookie _stl_vid)'),
-      session_id: sid + (sessionFresh ? ' (nova)' : ' (cookie _stl_sid)'),
-      fbp: fbp + ' — ' + fbpFrom,
-      fbc: fbc ? fbc + ' — ' + fbcFrom : fbcFrom,
-      utms_da_chegada: utm,
-      query_levada_ao_checkout: arrival || '(nenhuma)',
-      dominio_dos_cookies: cookieDomain || location.hostname,
-      referrer: d.referrer || '(nenhum)',
-      user_agent: n.userAgent
-    },
-    level: pageFbq && PIXEL ? 'warning' : undefined,
-    aviso: pageFbq && PIXEL ? 'Já existe um fbq na página (pixel colado à mão?). O snippet dispara só no pixel da área, mas o PageView do código colado conta à parte.' : undefined
-  });
+  touchSession();
 
   if (typeof w.open === 'function') {
     var open = w.open;
@@ -641,8 +576,8 @@ const SOURCE = `(function (w, d) {
   w.addEventListener('pageshow', function (e) { if (e.persisted) { exited = false; icSent = false; } });
   d.addEventListener('click', onClick, true);
   d.addEventListener('submit', onSubmit, true);
-  if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', function () { badge(); watchDataLayer(); pageview(); });
-  else { badge(); watchDataLayer(); pageview(); }
+  if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', function () { badge(); pageview(); });
+  else { badge(); pageview(); }
 
   w.sentinel = api;
   for (var q = 0; q < pending.length; q++) api.apply(null, pending[q]);

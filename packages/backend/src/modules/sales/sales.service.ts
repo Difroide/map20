@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SupabaseService } from '../../shared/services/supabase.service';
 import { VisitorMatchingService } from '../tracking/visitor-matching.service';
 import { webhookContext } from '../../shared/helpers/webhook-context';
-import { debugContext } from '../debug/debug-context';
+import { debugContext, traced } from '../debug/debug-context';
 
 /**
  * Gravação da venda que o webhook do checkout trouxe. A venda é o que liga o
@@ -83,7 +83,9 @@ export class SalesService {
   }
 
   private async persist(sale: Record<string, any>): Promise<Record<string, any>> {
-    const { data, error } = await this.supabase.getClient().from('sales').insert(sale).select('id').single();
+    const { data, error } = await traced('sales', 'insert', sale, () =>
+      this.supabase.getClient().from('sales').insert(sale).select('id').single(),
+    );
     if (error) throw new Error(error.message);
     return data;
   }

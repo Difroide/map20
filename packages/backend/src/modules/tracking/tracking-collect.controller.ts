@@ -160,7 +160,7 @@ export class TrackingCollectController {
         this.logger.error(`Erro no collect: ${error?.message}`, error?.stack);
       }
       trace.respond(200, '');
-      await this.debug.saveServerTrace(trace);
+      if (trace.events.some((name) => META_EVENTS.has(name))) await this.debug.saveServerTrace(trace);
     });
 
     res.status(200).send();
@@ -352,6 +352,9 @@ export class TrackingCollectController {
     return entry.count <= COLLECT_LIMIT_PER_MINUTE;
   }
 }
+
+/** O preview mostra só as requisições com evento do Meta. */
+const META_EVENTS = new Set(['PageView', 'InitiateCheckout']);
 
 const EVENT_LABEL: Record<string, string> = {
   pageview: 'PageView',

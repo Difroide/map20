@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
-import type { DebugHttpCall, ServerTrace } from '@/hooks/usePreview';
+import type { DebugDbWrite, DebugHttpCall, ServerTrace } from '@/hooks/usePreview';
 import { Empty, JsonBlock, TagList, TimelineItem, UserDataTable, VariablesTable, isUserData, time } from './parts';
 import { useFollowSelection } from './useFollowSelection';
 
@@ -28,8 +28,8 @@ export function ServerDebug({ traces }: { traces: ServerTrace[] }) {
 
       {visible.length === 0 ? (
         <Empty>
-          Nenhuma requisição ainda. Com o preview ligado, aparecem aqui todos os /collect do snippet e todos os webhooks
-          dos checkouts deste container — inclusive os recusados.
+          Nenhuma requisição ainda. Com o preview ligado, aparecem aqui os eventos do Meta que chegam do snippet
+          (PageView, InitiateCheckout) e todos os webhooks dos checkouts deste container — inclusive os recusados.
         </Empty>
       ) : (
         <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
@@ -59,6 +59,7 @@ function ServerDetail({ trace }: { trace: ServerTrace }) {
   const [tab, setTab] = useState('tags');
   const [httpOpen, setHttpOpen] = useState<number | null>(null);
   const status = d.response?.status ?? null;
+  const db = d.db ?? [];
 
   // Outra requisição selecionada: a chamada HTTP aberta era da anterior.
   useEffect(() => setHttpOpen(null), [trace.id]);
@@ -87,6 +88,7 @@ function ServerDetail({ trace }: { trace: ServerTrace }) {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList className="flex-wrap">
           <TabsTrigger value="tags">Tags ({d.tags.length})</TabsTrigger>
+          <TabsTrigger value="db">Banco de dados ({db.length})</TabsTrigger>
           <TabsTrigger value="request">Request</TabsTrigger>
           <TabsTrigger value="vars">Variáveis</TabsTrigger>
           <TabsTrigger value="http">HTTP de saída ({d.http.length})</TabsTrigger>
@@ -95,6 +97,14 @@ function ServerDetail({ trace }: { trace: ServerTrace }) {
 
         <TabsContent value="tags">
           <TagList tags={d.tags} onOpenHttp={openHttp} />
+        </TabsContent>
+
+        <TabsContent value="db" className="space-y-2">
+          {db.length === 0 ? (
+            <Empty>Nada foi gravado no banco nesta requisição.</Empty>
+          ) : (
+            db.map((write, i) => <DbWrite key={i} write={write} />)
+          )}
         </TabsContent>
 
         <TabsContent value="request" className="space-y-3">
@@ -190,6 +200,37 @@ function HttpCall({ call, open, onToggle }: { call: DebugHttpCall; open: boolean
           </Section>
         </div>
       )}
+    </div>
+  );
+}
+
+const OPERATION_LABEL: Record<DebugDbWrite['operation'], string> = {
+  insert: 'INSERT',
+  upsert: 'UPSERT',
+  update: 'UPDATE',
+  rpc: 'RPC',
+};
+
+/** Uma gravação: o que foi escrito ao lado do que o banco devolveu. */
+function DbWrite({ write }: { write: DebugDbWrite }) {
+  const rows = Array.isArray(write.data) ? write.data.length : 1;
+  return (
+    <div className="rounded-md border border-foreground/10">
+      <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-xs">
+        <Chip tone={write.error ? 'error' : 'ok'}>{write.error ? 'erro' : 'gravado'}</Chip>
+        <span className="font-mono text-foreground">{OPERATION_LABEL[write.operation]}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-muted-foreground">{write.table}</span>
+        {rows > 1 && <span className="text-muted-foreground">{rows} linhas</span>}
+        <span className="shrink-0 text-muted-foreground">{write.durationMs} ms</span>
+      </div>
+      <div className="grid gap-3 border-t border-foreground/10 p-3 xl:grid-cols-2">
+        <Section title="Dados gravados">
+          <JsonBlock value={write.data} />
+        </Section>
+        <Section title={write.error ? 'Erro do banco' : 'Resposta do banco'}>
+          {write.error ? <p className="text-xs text-destructive">{write.error}</p> : <JsonBlock value={write.result} />}
+        </Section>
+      </div>
     </div>
   );
 }

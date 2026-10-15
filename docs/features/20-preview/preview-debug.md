@@ -23,8 +23,9 @@ Painel ──POST /api/debug/start──▶ workspaces.debug_until (+60 min), de
 ```
 
 - **Ligado por area.** `workspaces.debug_until` diz ate quando; `debug_token` (48 hex) autentica o navegador. O painel renova sozinho enquanto a tela esta aberta.
-- **Web.** O `tracker.js` so manda mensagens com o token, e o servidor so grava se o token for o do preview ligado. Mensagens: *Snippet carregado*, *PageView*, *InitiateCheckout*, *Links de checkout decorados*, *dataLayer: …*, *Evento: …*, *Nova sessao*, *Saida da pagina*, e avisos/erros (pixel bloqueado, pagina sem link de checkout, fbq ja existente).
-- **Server.** Toda requisicao de `/collect` e de webhook roda dentro de um `DebugTrace` (`modules/debug/debug-context.ts`). O controller abre; `MetaCapiService`, `SalesService`, `VisitorMatchingService` e o `DebugLogger` escrevem nele sem receber parametro. No fim, `DebugService.saveServerTrace` grava se a area estiver em preview. Fora do preview o rastro e descartado.
+- **Web.** O `tracker.js` so manda mensagens com o token, e o servidor so grava se o token for o do preview ligado. So eventos do Meta: *PageView* e *InitiateCheckout* (com pixel, external_id, fbp, fbc, sessao, indexador e as tags do pixel e do servidor) e o erro do pixel que nao carregou.
+- **Server.** Toda requisicao de `/collect` e de webhook roda dentro de um `DebugTrace` (`modules/debug/debug-context.ts`). O controller abre; `MetaCapiService`, `SalesService`, `VisitorMatchingService` e o `DebugLogger` escrevem nele sem receber parametro. No fim, `DebugService.saveServerTrace` grava se a area estiver em preview. Fora do preview o rastro e descartado. No `/collect`, so entram requisicoes com PageView ou InitiateCheckout (saida de pagina, evento proprio e robo ficam de fora).
+- **Banco de dados.** Cada gravacao feita na requisicao passa por `traced()` (`debug-context.ts`) e aparece na aba *Banco de dados*: tabela, operacao, os dados escritos e o que o banco devolveu (ou o erro). Cobre `tracking_ingest` (visitante, sessao, eventos), `sales`, `tracking_match_sale` e `capi_events` (registro, reserva e resultado do envio).
 - **Webhook sem area conhecida** (token errado, assinatura invalida): a area sai do token do webhook (`checkout_integrations.webhook_secret`). Sem token reconhecivel, nao ha a quem mostrar e nada e gravado.
 
 ## Regras de negocio
