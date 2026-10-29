@@ -5,7 +5,7 @@ import { Loader2, Monitor, ShoppingCart, Smartphone, Tablet } from 'lucide-react
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { NoWorkspace } from '@/components/NoWorkspace';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
-import { useLive, type LiveVisit } from '@/hooks/useLive';
+import { UTM_KEYS, useLive, type LiveVisit } from '@/hooks/useLive';
 import { cn } from '@/lib/utils';
 
 const regionNames = (() => {
@@ -155,6 +155,38 @@ function Empty() {
   );
 }
 
+/** Os parâmetros do link pelo qual a pessoa chegou. */
+function UtmChips({ visit: v }: { visit: LiveVisit }) {
+  const chips: [string, string][] = UTM_KEYS.flatMap((key) => {
+    const value = v.utm[key];
+    return value ? [[`utm_${key}`, value] as [string, string]] : [];
+  });
+  if (v.adId) chips.push(['ad_id', v.adId]);
+  if (!chips.length && !v.clickId) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {v.clickId && (
+        <span
+          className="rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary"
+          title={`Chegou com ${v.clickId} na URL`}
+        >
+          {v.clickId === 'fbclid' ? 'Anúncio Meta' : 'Anúncio Google'}
+        </span>
+      )}
+      {chips.map(([key, value]) => (
+        <span
+          key={key}
+          className="max-w-full truncate rounded bg-foreground/5 px-1.5 py-0.5 font-mono text-[11px]"
+          title={`${key}=${value}`}
+        >
+          <span className="text-muted-foreground">{key}=</span>
+          {value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 function VisitRow({ visit: v }: { visit: LiveVisit }) {
   const place = [v.city, v.region].filter(Boolean).join(', ');
   return (
@@ -180,9 +212,9 @@ function VisitRow({ visit: v }: { visit: LiveVisit }) {
           {pagePath(v.page)}
           {' · '}
           {v.pageviews} {v.pageviews === 1 ? 'página' : 'páginas'}
-          {v.source && ` · ${v.source}`}
-          {v.campaign && ` / ${v.campaign}`}
+          {Object.keys(v.utm).length === 0 && v.source && ` · veio de ${v.source}`}
         </p>
+        <UtmChips visit={v} />
       </div>
       <span className="shrink-0 text-right text-xs text-muted-foreground">
         {v.online ? 'agora' : v.exited ? 'saiu' : 'inativo'}

@@ -46,7 +46,7 @@ export class TrackingLiveController {
     const { data: sessions, error } = await client
       .from('tracking_sessions')
       .select(
-        'session_id, visitor_id, started_at, ended_at, landing_page, referrer, utm_source, utm_campaign, device_type, country, region, city, pageviews, had_checkout_click',
+        'session_id, visitor_id, started_at, ended_at, landing_page, referrer, utm_source, utm_medium, utm_campaign, utm_content, utm_term, fbclid, gclid, ad_id, device_type, country, region, city, pageviews, had_checkout_click',
       )
       .eq('workspace_id', workspaceId)
       .gte('started_at', new Date(now - MAX_SESSION_AGE_MS).toISOString())

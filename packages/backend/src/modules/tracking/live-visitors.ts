@@ -17,7 +17,13 @@ export interface LiveSessionRow {
   landing_page: string;
   referrer: string | null;
   utm_source: string | null;
+  utm_medium: string | null;
   utm_campaign: string | null;
+  utm_content: string | null;
+  utm_term: string | null;
+  fbclid: string | null;
+  gclid: string | null;
+  ad_id: string | null;
   device_type: string | null;
   country: string | null;
   region: string | null;
@@ -42,8 +48,13 @@ export interface LiveVisit {
   /** O último evento foi uma saída: fechou a página ou trocou de aba. */
   exited: boolean;
   page: string;
+  /** utm_source; sem ele, o site de onde veio. */
   source: string | null;
-  campaign: string | null;
+  /** Os UTMs do link da entrada, só os que vieram preenchidos. */
+  utm: Partial<Record<'source' | 'medium' | 'campaign' | 'content' | 'term', string>>;
+  /** Clique em anúncio: fbclid (Meta) ou gclid (Google). */
+  clickId: 'fbclid' | 'gclid' | null;
+  adId: string | null;
   device: string | null;
   country: string | null;
   region: string | null;
@@ -83,7 +94,15 @@ export function buildLiveSnapshot(sessions: LiveSessionRow[], events: LiveEventR
         exited,
         page: lastPage.get(s.session_id) ?? s.landing_page,
         source: s.utm_source ?? referrerHost(s.referrer),
-        campaign: s.utm_campaign,
+        utm: filled({
+          source: s.utm_source,
+          medium: s.utm_medium,
+          campaign: s.utm_campaign,
+          content: s.utm_content,
+          term: s.utm_term,
+        }),
+        clickId: s.fbclid ? 'fbclid' : s.gclid ? 'gclid' : null,
+        adId: s.ad_id,
         device: s.device_type,
         country: s.country,
         region: s.region,
@@ -111,6 +130,14 @@ export function buildLiveSnapshot(sessions: LiveSessionRow[], events: LiveEventR
     list,
     generatedAt: new Date(now).toISOString(),
   };
+}
+
+function filled<K extends string>(values: Record<K, string | null>): Partial<Record<K, string>> {
+  const out: Partial<Record<K, string>> = {};
+  for (const key of Object.keys(values) as K[]) {
+    if (values[key]) out[key] = values[key]!;
+  }
+  return out;
 }
 
 function referrerHost(referrer: string | null): string | null {

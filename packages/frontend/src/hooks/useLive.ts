@@ -2,6 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { api } from '@/lib/api';
 
+export const UTM_KEYS = ['source', 'medium', 'campaign', 'content', 'term'] as const;
+export type UtmKey = (typeof UTM_KEYS)[number];
+
 export interface LiveVisit {
   sessionId: string;
   visitorId: string;
@@ -11,8 +14,13 @@ export interface LiveVisit {
   /** O último evento foi uma saída: fechou a página ou trocou de aba. */
   exited: boolean;
   page: string;
+  /** utm_source; sem ele, o site de onde veio. */
   source: string | null;
-  campaign: string | null;
+  /** Os UTMs do link da entrada, só os que vieram preenchidos. */
+  utm: Partial<Record<UtmKey, string>>;
+  /** Clique em anúncio: fbclid (Meta) ou gclid (Google). */
+  clickId: 'fbclid' | 'gclid' | null;
+  adId: string | null;
   device: string | null;
   country: string | null;
   region: string | null;

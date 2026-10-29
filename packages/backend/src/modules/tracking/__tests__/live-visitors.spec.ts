@@ -12,7 +12,13 @@ function session(id: string, over: Partial<LiveSessionRow> = {}): LiveSessionRow
     landing_page: 'https://site.com/',
     referrer: null,
     utm_source: null,
+    utm_medium: null,
     utm_campaign: null,
+    utm_content: null,
+    utm_term: null,
+    fbclid: null,
+    gclid: null,
+    ad_id: null,
     device_type: 'mobile',
     country: 'BR',
     region: 'SP',
@@ -72,5 +78,26 @@ describe('buildLiveSnapshot', () => {
     ]);
     expect(snap.list.find((v) => v.sessionId === 'c')?.source).toBe('instagram.com');
     expect(snap.list.find((v) => v.sessionId === 'd')?.source).toBe('facebook');
+  });
+
+  it('traz so os UTMs preenchidos e o clique do anuncio', () => {
+    const snap = buildLiveSnapshot(
+      [
+        session('a', { utm_source: 'fb', utm_medium: 'paid', utm_content: 'criativo-3', fbclid: 'IwAR1', ad_id: '120' }),
+        session('b', { gclid: 'Cj0K' }),
+        session('c'),
+      ],
+      [],
+      NOW,
+    );
+    const byId = Object.fromEntries(snap.list.map((v) => [v.sessionId, v]));
+    expect(byId.a).toMatchObject({
+      utm: { source: 'fb', medium: 'paid', content: 'criativo-3' },
+      clickId: 'fbclid',
+      adId: '120',
+    });
+    expect(byId.a.utm).not.toHaveProperty('campaign');
+    expect(byId.b.clickId).toBe('gclid');
+    expect(byId.c).toMatchObject({ utm: {}, clickId: null, adId: null });
   });
 });
