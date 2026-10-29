@@ -3,12 +3,13 @@ import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Bug, Link2, Settings, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { Bug, Link2, Radio, Settings, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import { Logo } from '@/components/Logo';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { WorkspaceSwitcher } from '@/components/WorkspaceSwitcher';
 
 const navItems = [
+  { to: '/live', icon: Radio, label: 'Ao vivo' },
   { to: '/preview', icon: Bug, label: 'Preview e debug' },
   { to: '/integrations', icon: Link2, label: 'Integrações' },
   { to: '/settings', icon: Settings, label: 'Configurações' },

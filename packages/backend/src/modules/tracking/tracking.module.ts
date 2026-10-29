@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TrackingCollectController } from './tracking-collect.controller';
+import { TrackingLiveController } from './tracking-live.controller';
 import { TrackingIngestService } from './tracking-ingest.service';
 import { VisitorMatchingService } from './visitor-matching.service';
 import { MetaCapiModule } from '../meta-capi/meta-capi.module';
@@ -15,7 +16,7 @@ import { DebugModule } from '../debug/debug.module';
  */
 @Module({
   imports: [MetaCapiModule, DebugModule],
-  controllers: [TrackingCollectController],
+  controllers: [TrackingCollectController, TrackingLiveController],
   providers: [TrackingIngestService, VisitorMatchingService],
   exports: [VisitorMatchingService],
 })
