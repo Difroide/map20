@@ -523,6 +523,48 @@ describe('tracker.js', () => {
     });
   });
 
+  describe('Mapa de calor', () => {
+    it('manda o clique preso ao elemento e a rolagem junto com a saída', async () => {
+      const page = loadPage('https://www.loja.com.br/oferta', '<main><button id="comprar">Quero  comprar</button></main>');
+      await ready(page);
+      page.dom.window.document.getElementById('comprar').dispatchEvent(
+        new page.w.MouseEvent('click', { bubbles: true, clientX: 5, clientY: 6 }),
+      );
+      page.hide();
+      const hm = page.beacons.map((b) => b.hm).filter(Boolean).pop();
+      expect(hm.p).toMatch(/^[0-9a-f]{8}$/);
+      expect(hm.u).toContain('https://www.loja.com.br/oferta');
+      expect(typeof hm.sd).toBe('number');
+      expect(hm.c).toEqual([['#comprar', null, null, 5, 6, 'Quero comprar']]);
+    });
+
+    it('seletor por posição quando o elemento não tem id', async () => {
+      const page = loadPage('https://www.loja.com.br/oferta', '<div><p>a</p><p>b</p></div>');
+      await ready(page);
+      page.dom.window.document.querySelectorAll('p')[1].dispatchEvent(new page.w.MouseEvent('click', { bubbles: true }));
+      page.hide();
+      const [click] = page.beacons.map((b) => b.hm).filter(Boolean).pop().c;
+      expect(click[0]).toBe('body:nth-of-type(1)>div:nth-of-type(1)>p:nth-of-type(2)');
+      expect(page.dom.window.document.querySelector(click[0]).textContent).toBe('b');
+      expect(click[5]).toBeNull();
+    });
+
+    it('com ?stl_heatmap=<token> nao rastreia e carrega o desenho do mapa', async () => {
+      const page = loadPage(`https://www.loja.com.br/oferta?stl_heatmap=${'b'.repeat(48)}`);
+      await ready(page);
+      page.hide();
+      expect(page.beacons).toHaveLength(0);
+      expect(page.dom.window.document.cookie).toBe('');
+      const script = page.dom.window.document.querySelector('script[src$="/api/t/heatmap.js"]');
+      expect(script).not.toBeNull();
+      expect(page.w.__stlHeatmap).toEqual({
+        tid: TID,
+        token: 'b'.repeat(48),
+        endpoint: 'https://track.loja.com.br/api/t/heatmap-data',
+      });
+    });
+  });
+
   describe('Modo preview', () => {
     const PREVIEW_URL = `https://www.loja.com.br/oferta?utm_source=facebook&stl_debug=${DEBUG_TOKEN}`;
 

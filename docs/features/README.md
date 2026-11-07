@@ -24,6 +24,7 @@ Cada documento segue o [template padrao](TEMPLATE.md). Consulte o [glossario](GL
 | Doc | Descricao |
 |-----|-----------|
 | [Modo preview](20-preview/preview-debug.md) | Debug web (navegador) e server (requisicoes, tags, HTTP de saida, console), no estilo do GTM |
+| [Mapa de calor](21-heatmap/heatmap.md) | Cliques e rolagem da pagina de vendas, desenhados sobre a pagina real, no estilo do Clarity |
 
 ### Rastreio e API de Conversoes
 | Doc | Descricao |

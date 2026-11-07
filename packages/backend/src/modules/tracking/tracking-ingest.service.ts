@@ -74,6 +74,61 @@ export class TrackingIngestService {
     }
   }
 
+  /**
+   * Cliques e rolagem do mapa de calor. Tabelas próprias, fora do
+   * tracking_ingest: um clique não é evento da visita. Nunca lança; sem a
+   * migration do mapa de calor, só avisa no log.
+   */
+  async ingestHeatmap(batch: CollectBatch): Promise<void> {
+    const hm = batch.heatmap;
+    if (!hm) return;
+    const client = this.supabase.getClient();
+    try {
+      const writes: PromiseLike<{ error: { message: string } | null }>[] = [
+        client.from('heatmap_scrolls').upsert(
+          {
+            workspace_id: batch.workspaceId,
+            session_id: batch.sessionId,
+            page_id: hm.pageId,
+            url: hm.url,
+            device: hm.device,
+            depth_pct: hm.depthPct,
+            fold_pct: hm.foldPct,
+            doc_h: hm.docH,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'workspace_id,session_id,page_id' },
+        ),
+      ];
+      if (hm.clicks.length) {
+        writes.push(
+          client.from('heatmap_clicks').insert(
+            hm.clicks.map((c) => ({
+              workspace_id: batch.workspaceId,
+              session_id: batch.sessionId,
+              page_id: hm.pageId,
+              url: hm.url,
+              device: hm.device,
+              selector: c.selector,
+              rx: c.rx,
+              ry: c.ry,
+              px: c.px,
+              py: c.py,
+              doc_w: hm.docW,
+              doc_h: hm.docH,
+              label: c.label,
+            })),
+          ),
+        );
+      }
+      for (const { error } of await Promise.all(writes)) {
+        if (error) this.logger.warn(`mapa de calor: ${error.message}`);
+      }
+    } catch (err: any) {
+      this.logger.warn(`mapa de calor erro: ${err?.message}`);
+    }
+  }
+
   /** A área existe? Cacheado, porque o tracker.js é pedido em toda visita sem cache do navegador. */
   async workspaceExists(workspaceId: string): Promise<boolean> {
     const key = `tracking:ws:${workspaceId}`;

@@ -33,6 +33,10 @@
  *     deduplica pelo event_id.
  *   - Hotmart (XCOD_UTM): as UTMs da chegada vão também no xcod.
  *   - page_exit ao sair, com o tempo na página.
+ *   - Mapa de calor: cada clique (seletor do elemento + posição dentro dele)
+ *     e a maior rolagem vão no campo `hm` do lote. Com ?stl_heatmap=<token>
+ *     na URL, não rastreia nada e carrega o heatmap.js (heatmap-script.ts),
+ *     que desenha o mapa por cima da página.
  *   - sentinel('track', 'nome', {props}) para eventos manuais.
  *   - Do Not Track ligado: não faz nada.
  *
@@ -51,6 +55,19 @@ const SOURCE = `(function (w, d) {
   var TID = __TID__, ENDPOINT = __ENDPOINT__, PARAM = __PARAM__, PIXEL = __PIXEL__, XCOD_UTM = __XCOD_UTM__;
   var n = w.navigator || {};
   var pending = (w.sentinel && w.sentinel.q) || [];
+  // Mapa de calor: a página aberta pelo painel com ?stl_heatmap=<token> não é
+  // uma visita. Nada é rastreado; carrega só o desenho do mapa por cima.
+  var hmToken = (location.search.match(/[?&]stl_heatmap=([a-f0-9]{48})/) || [])[1];
+  if (hmToken) {
+    w.sentinel = function () {};
+    if (w.__stlHeatmap) return;
+    w.__stlHeatmap = { tid: TID, token: hmToken, endpoint: ENDPOINT.replace(/\\/collect$/, '/heatmap-data') };
+    var hms = d.createElement('script');
+    hms.async = true;
+    hms.src = ENDPOINT.replace(/\\/collect$/, '/heatmap.js');
+    (d.head || d.documentElement).appendChild(hms);
+    return;
+  }
   if (n.doNotTrack == '1' || n.doNotTrack == 'yes' || w.doNotTrack == '1' || n.msDoNotTrack == '1') {
     w.sentinel = function () {};
     return;
@@ -288,7 +305,85 @@ const SOURCE = `(function (w, d) {
     };
     queue = [];
     if (dbg) body.dbg = dbg;
+    if (hmClicks.length || hmDepth > hmSentDepth) body.hm = hmPayload();
     send(JSON.stringify(body));
+  }
+
+  // ---- Mapa de calor ------------------------------------------------------
+  // Cada clique vai preso ao elemento (seletor + posição dentro dele), para
+  // cair no lugar certo mesmo com outra largura de tela; os pixels da página
+  // ficam de reserva. A rolagem é a maior profundidade vista nesta página.
+  // Nada de texto digitado: só o rótulo curto de botão e link.
+  var hmClicks = [], hmTotal = 0, hmDepth = 0, hmSentDepth = 0, hmScrollTimer = null;
+  var HM_MAX = 200, HM_PER_BATCH = 50;
+
+  function docSize() {
+    var e = d.documentElement, b = d.body;
+    return {
+      w: Math.max(e.scrollWidth, b ? b.scrollWidth : 0, e.clientWidth),
+      h: Math.max(e.scrollHeight, b ? b.scrollHeight : 0, e.clientHeight)
+    };
+  }
+
+  function cssPath(el) {
+    var parts = [], node = el, i, sib, nth;
+    for (i = 0; node && node.nodeType === 1 && node !== d.documentElement && i < 30; i++) {
+      if (node.id && /^[A-Za-z][A-Za-z0-9_-]{0,60}$/.test(node.id)) { parts.unshift('#' + node.id); break; }
+      nth = 1;
+      for (sib = node.previousElementSibling; sib; sib = sib.previousElementSibling) if (sib.nodeName === node.nodeName) nth++;
+      parts.unshift(node.nodeName.toLowerCase() + ':nth-of-type(' + nth + ')');
+      node = node.parentElement;
+    }
+    return parts.join('>').slice(0, 600);
+  }
+
+  function hmLabel(el) {
+    var i, t, tag;
+    for (i = 0; el && el.nodeType === 1 && i < 6; i++, el = el.parentElement) {
+      tag = el.nodeName;
+      if (tag === 'A' || tag === 'BUTTON' || (el.getAttribute && el.getAttribute('role') === 'button') ||
+          (tag === 'INPUT' && /^(submit|button)$/i.test(el.type))) {
+        t = tag === 'INPUT' ? el.value : (el.innerText || el.textContent || el.getAttribute('aria-label') || '');
+        t = String(t || '').replace(/\\s+/g, ' ').replace(/^ | $/g, '');
+        return t ? t.slice(0, 60) : null;
+      }
+    }
+    return null;
+  }
+
+  function hmClick(ev) {
+    var el = ev.target, r, rx = null, ry = null;
+    if (hmTotal >= HM_MAX || !el || el.nodeType !== 1 || typeof ev.clientX !== 'number') return;
+    while (el.ownerSVGElement && el.parentElement) el = el.parentElement;
+    if (el.getAttribute && el.getAttribute('data-stl-debug') !== null) return;
+    try {
+      r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        rx = Math.round(Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)) * 1000) / 1000;
+        ry = Math.round(Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height)) * 1000) / 1000;
+      }
+    } catch (e) {}
+    hmTotal++;
+    hmClicks.push([cssPath(el), rx, ry,
+      Math.round(ev.clientX + (w.pageXOffset || 0)), Math.round(ev.clientY + (w.pageYOffset || 0)), hmLabel(el)]);
+  }
+
+  function hmScroll() {
+    hmScrollTimer = null;
+    var bottom = (w.pageYOffset || 0) + (w.innerHeight || d.documentElement.clientHeight || 0);
+    if (bottom > hmDepth) hmDepth = Math.round(bottom);
+  }
+
+  function hmPayload() {
+    var s = docSize();
+    hmScroll();
+    hmSentDepth = hmDepth;
+    return {
+      u: location.href, p: pageId,
+      vw: w.innerWidth || d.documentElement.clientWidth || 0, vh: w.innerHeight || 0,
+      dw: s.w, dh: s.h, sd: hmDepth,
+      c: hmClicks.splice(0, HM_PER_BATCH)
+    };
   }
 
   function setParam(href, value, force) {
@@ -460,6 +555,7 @@ const SOURCE = `(function (w, d) {
 
   function onClick(ev) {
     var a = ev.target, el = ev.target, url;
+    try { hmClick(ev); } catch (e) {}
     while (a && a.nodeName !== 'A') a = a.parentNode;
     if (isCheckout(a, a && a.hasAttribute && a.hasAttribute('data-sentinel-checkout'))) {
       touchSession();
@@ -520,6 +616,7 @@ const SOURCE = `(function (w, d) {
 
   function pageview() {
     var ref = d.referrer || null;
+    hmScroll();
     var id = uuid(), pv = event('pageview', { referrer: ref, event_id: id }), i;
     for (i = 0; i < PARAMS.length; i++) if (utm[PARAMS[i]]) pv[PARAMS[i]] = utm[PARAMS[i]];
     enqueue(pv, true);
@@ -575,6 +672,7 @@ const SOURCE = `(function (w, d) {
   w.addEventListener('beforeunload', exit);
   w.addEventListener('pageshow', function (e) { if (e.persisted) { exited = false; icSent = false; } });
   d.addEventListener('click', onClick, true);
+  w.addEventListener('scroll', function () { if (!hmScrollTimer) hmScrollTimer = setTimeout(hmScroll, 250); }, { passive: true });
   d.addEventListener('submit', onSubmit, true);
   if (d.readyState === 'loading') d.addEventListener('DOMContentLoaded', function () { badge(); pageview(); });
   else { badge(); pageview(); }

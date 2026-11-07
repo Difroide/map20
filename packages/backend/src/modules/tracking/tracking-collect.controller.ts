@@ -223,6 +223,7 @@ export class TrackingCollectController {
     const [saved] = await Promise.all([
       this.ingestService.ingest(batch, ctx),
       this.capi.sendWebEvents(batch.workspaceId, this.webEvents(batch, ctx)),
+      this.ingestService.ingestHeatmap(batch),
     ]);
     trace.tag({
       name: 'Gravar visita no banco',

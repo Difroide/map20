@@ -10,6 +10,8 @@
  * tracking_ingest confia nesse formato.
  */
 
+import { HeatmapBatch, parseHeatmap } from './heatmap';
+
 export const EVENT_TYPES = ['pageview', 'checkout_click', 'page_exit', 'custom'] as const;
 export type TrackingEventType = (typeof EVENT_TYPES)[number];
 
@@ -55,6 +57,8 @@ export interface CollectBatch {
   events: CollectEvent[];
   /** Token do preview, quando o navegador está em modo debug. */
   debugToken: string | null;
+  /** Cliques e rolagem para o mapa de calor, quando o lote traz. */
+  heatmap: HeatmapBatch | null;
 }
 
 const DEBUG_TOKEN = /^[a-f0-9]{48}$/;
@@ -204,6 +208,7 @@ export function parseCollectBody(body: unknown): CollectBatch | null {
     fbc: metaCookie(b.fbc),
     events,
     debugToken: typeof b.dbg === 'string' && DEBUG_TOKEN.test(b.dbg) ? b.dbg : null,
+    heatmap: parseHeatmap(b.hm),
   };
 }
 
