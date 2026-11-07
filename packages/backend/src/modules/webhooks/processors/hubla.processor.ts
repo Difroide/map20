@@ -156,6 +156,27 @@ export class HublaProcessor {
     const utm = paymentSession.utm || {};
     const amountObj = invoice.amount || {};
 
+    // Mesmos caminhos do container do sGTM (Containers/Hubla.json):
+    //   - comprador em invoice.payer (event.user fica de reserva, para o
+    //     formato antigo);
+    //   - moeda em invoice.receivers[0].currency;
+    //   - indexador em invoice.paymentSession.params.sck — e o parametro da URL
+    //     do checkout que a Hubla devolve. O casamento com a visita acha o
+    //     stl_<sessao> no corpo cru (extractTrackingRef); aqui ele so fica
+    //     guardado no metadata para conferencia.
+    const payer = invoice.payer || {};
+    const buyer = {
+      firstName: payer.firstName || user.firstName || null,
+      lastName: payer.lastName || user.lastName || null,
+      email: payer.email || user.email || null,
+      phone: payer.phone || user.phone || null,
+      document: payer.document || user.document || null,
+    };
+    const receivers = Array.isArray(invoice.receivers) ? invoice.receivers : [];
+    const currency = receivers[0]?.currency || invoice.currency || 'BRL';
+    const params = paymentSession.params || {};
+    const sck = params.sck || null;
+
     // Quando a venda aconteceu, para o painel, e quando o dinheiro entrou.
     //
     // invoice.saleDate e a data em que a fatura nasceu, nao em que foi paga.
@@ -175,7 +196,7 @@ export class HublaProcessor {
 
     const status = APPROVED_EVENTS.has(eventType) ? 'approved' : 'refunded';
 
-    const customerName = [user.firstName, user.lastName]
+    const customerName = [buyer.firstName, buyer.lastName]
       .filter(Boolean)
       .join(' ') || null;
 
@@ -188,12 +209,13 @@ export class HublaProcessor {
     const utmMedium = utm.medium || null;
     const utmCampaign = utm.campaign || null;
     const utmContent = utm.content || null;
-    const utmTerm = utm.term || null;
+    // Links antigos levavam o indexador no utm_term; ali ele nao e UTM.
+    const utmTerm = utm.term && !/^stl_/i.test(utm.term) ? utm.term : null;
 
     const adId = this.webhooksService.extractNumericAdId(utmContent);
 
     const customerState = normalizeState(billingAddress.state) ||
-      this.webhooksService.getStateFromPhone(user.phone);
+      this.webhooksService.getStateFromPhone(buyer.phone);
 
     const saleData = {
       user_id: userId,
@@ -205,15 +227,15 @@ export class HublaProcessor {
       amount,
       product_name: product.name || (products[0] && products[0].name) || null,
       customer_name: customerName,
-      customer_email: user.email || null,
-      customer_phone: user.phone || null,
-      customer_doc: user.document || null,
+      customer_email: buyer.email,
+      customer_phone: buyer.phone,
+      customer_doc: buyer.document,
       customer_state: customerState,
       customer_city: billingAddress.city || null,
       customer_country: billingAddress.countryCode || 'BR',
       status,
       payment_method: invoice.paymentMethod || null,
-      currency: invoice.currency || 'BRL',
+      currency,
       utm_source: utmSource,
       utm_medium: utmMedium,
       utm_campaign: utmCampaign,
@@ -232,6 +254,7 @@ export class HublaProcessor {
         installment_fee_cents: amountObj.installmentFeeCents,
         coupon: invoice.coupon || null,
         ip: paymentSession.ip || null,
+        sck,
         product_id: product.id || (products[0] && products[0].id) || null,
         offers: products[0] && products[0].offers ? products[0].offers : null,
         // Lido pelo painel "Vendas por Produto" para desmembrar a venda.
@@ -260,7 +283,7 @@ export class HublaProcessor {
         this.logger.log(`Hubla refund: ${aEstornar.length} linha(s) do pedido ${saleData.external_id}`);
       } else {
         const fallbackResult = await this.webhooksService.findAndRefundOriginalSale({
-          userId, customerEmail: user.email || null,
+          userId, customerEmail: buyer.email,
           productName: product.name || (products[0] && products[0].name) || null,
           checkoutIntegrationId: integrationId, platform: 'hubla',
         });
@@ -272,7 +295,7 @@ export class HublaProcessor {
       }
 
       this.discordLogger.logRefund('hubla', {
-        amount, customerName: customerName, customerEmail: user.email || null,
+        amount, customerName: customerName, customerEmail: buyer.email,
         productName: product.name || (products[0] && products[0].name) || null,
         paymentMethod: invoice.paymentMethod || null, adMatched: !!adId,
         utmSource, utmMedium, utmCampaign, utmContent, utmTerm,
@@ -314,7 +337,7 @@ export class HublaProcessor {
     const logData = {
       amount,
       customerName: customerName,
-      customerEmail: user.email || null,
+      customerEmail: buyer.email,
       productName: product.name || (products[0] && products[0].name) || null,
       paymentMethod: invoice.paymentMethod || null,
       adMatched: !!adId,

@@ -191,6 +191,49 @@ describe('HublaProcessor', () => {
 
   });
 
+  it('reads buyer, currency and sck from the same paths as the sGTM container', async () => {
+    const sck = 'stl_0a1b2c3d-1111-4222-8333-444455556666';
+    const payload = {
+      type: 'invoice.payment_succeeded',
+      version: '2.0.0',
+      event: {
+        product: { id: 'prod-002', name: 'Mentoria' },
+        invoice: {
+          id: 'inv-hubla-777',
+          paymentMethod: 'credit_card',
+          amount: { totalCents: 49700 },
+          receivers: [{ currency: 'USD' }],
+          payer: {
+            firstName: 'Joana',
+            lastName: 'Souza',
+            email: 'joana@test.com',
+            phone: '+5521988887777',
+          },
+          paymentSession: {
+            ip: '200.1.2.3',
+            params: { sck },
+            utm: { source: 'facebook', term: 'stl_antigo' },
+          },
+        },
+        user: { firstName: 'Outro', lastName: 'Nome', email: 'outro@test.com' },
+      },
+    };
+
+    const result = await processor.process(payload, TEST_TOKEN);
+
+    expect(result.body.status).toBe('approved');
+    const saleData = mockSalesService.upsertFromWebhook.mock.calls[0][0];
+    expect(saleData.amount).toBe(497);
+    expect(saleData.currency).toBe('USD');
+    expect(saleData.customer_name).toBe('Joana Souza');
+    expect(saleData.customer_email).toBe('joana@test.com');
+    expect(saleData.customer_phone).toBe('+5521988887777');
+    expect(saleData.order_external_id).toBe('inv-hubla-777');
+    expect(saleData.metadata.sck).toBe(sck);
+    // Indexador antigo no utm_term não é UTM.
+    expect(saleData.utm_term).toBeNull();
+  });
+
   it('should process a refund webhook (refund_request.accepted)', async () => {
     // Integration lookup uses .single() (defaulted to integration data by createMockSupabase).
     // The refund path does .maybeSingle() to find the existing approved sale by external_id.

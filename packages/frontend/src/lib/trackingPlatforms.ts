@@ -1,8 +1,9 @@
 /**
  * Em que parâmetro da URL cada checkout aceita o indexador — e o devolve no
  * webhook. Tirado dos containers do sGTM (pasta Containers/), um por
- * plataforma; Hubla e Monetizze, que não têm container, pelos payloads de
- * docs/webhook-payloads.
+ * plataforma; Monetizze, que não tem container, pelo payload de
+ * docs/webhook-payloads. A Hubla devolve o sck em
+ * invoice.paymentSession.params.sck (Containers/Hubla.json).
  *
  * `sales`: o painel já tem processor para o webhook dessa plataforma. Sem
  * ele, PageView e InitiateCheckout funcionam, mas a venda não é gravada e o
@@ -34,7 +35,7 @@ export const TRACKING_PLATFORMS: TrackingPlatform[] = [
   { id: 'monetizze', name: 'Monetizze', param: 'src', sales: true },
   { id: 'greenn', name: 'Greenn', param: 'xcod', sales: true },
   { id: 'eduzz', name: 'Eduzz', param: 'trk', sales: true },
-  { id: 'hubla', name: 'Hubla', param: 'utm_term', sales: true },
+  { id: 'hubla', name: 'Hubla', param: 'sck', sales: true },
   { id: 'wiven', name: 'Wiven', param: 'sck', sales: true },
   { id: 'frendz', name: 'Frendz', param: 'src', sales: true },
   { id: 'herospark', name: 'Herospark', param: 'src', sales: true },

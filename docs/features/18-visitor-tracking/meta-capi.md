@@ -41,7 +41,7 @@ Tudo no subdominio do cliente (`track.loja.com.br`) apontado para o projeto na V
 
 | # | Regra | Resultado |
 |---|---|---|
-| RN-01 | Parametro por plataforma | `sck` (Hotmart, Kiwify, Cakto, GGCheckout, Ticto, Mundpay, PerfectPay, Lastlink, CartPanda, Guru, Wiven), `src` (Kirvano, Payt, Monetizze, Frendz, Herospark, Kavoo), `xcod` (Greenn, PagTrust, Assiny), `trk` (Eduzz), `utm_term` (Hubla, Yampi, Wiapy, Doppus) |
+| RN-01 | Parametro por plataforma | `sck` (Hotmart, Kiwify, Cakto, GGCheckout, Ticto, Mundpay, PerfectPay, Lastlink, CartPanda, Guru, Wiven, Hubla), `src` (Kirvano, Payt, Monetizze, Frendz, Herospark, Kavoo), `xcod` (Greenn, PagTrust, Assiny), `trk` (Eduzz), `utm_term` (Yampi, Wiapy, Doppus) |
 | RN-02 | Parametro ja usado pelo cliente | Nao e trocado — exceto `utm_term`, que e a unica chave dessas plataformas |
 | RN-03 | event_id | UUID gerado na pagina para PageView e InitiateCheckout; `purchase:<pedido>` no Purchase |
 | RN-04 | Espelho no navegador | Ligado: o snippet chama `fbq('track', ..., {}, {eventID})` com o mesmo id, e o Meta deduplica. Exige tirar o `fbq('track','PageView')` do codigo base do pixel |
