@@ -45,6 +45,8 @@ export type PurchaseStatus = 'sent' | 'failed' | 'pending' | null;
 export interface SaleOrder {
   id: string;
   orderId: string;
+  /** As linhas do pedido (principal e bumps): o Purchase aponta para uma delas. */
+  lineIds: string[];
   soldAt: string;
   status: string;
   amount: number;
@@ -137,6 +139,7 @@ export function buildOrders(
     orders.push({
       id: main.id,
       orderId,
+      lineIds: lines.map((l) => l.id),
       soldAt: lines.reduce((min, l) => (l.sold_at < min ? l.sold_at : min), main.sold_at),
       status: orderStatus(lines),
       amount: money(lines.reduce((sum, l) => sum + money(l.amount), 0)),

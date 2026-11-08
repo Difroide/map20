@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { ChevronDown, Loader2, Search } from 'lucide-react';
+import { Check, ChevronDown, Copy, Loader2, Search } from 'lucide-react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { NoWorkspace } from '@/components/NoWorkspace';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
-import { useSales, type SaleOrder, type SalesPeriod } from '@/hooks/useSales';
+import { usePurchaseEvents, useSales, type PurchaseEvent, type SaleOrder, type SalesPeriod } from '@/hooks/useSales';
 import { CHECKOUT_PLATFORMS, type CheckoutPlatform } from '@/types/checkout';
 import { cn } from '@/lib/utils';
 
@@ -307,7 +307,103 @@ function Field({ label, value }: { label: string; value: string | null | undefin
 
 function OrderDetail({ order: o }: { order: SaleOrder }) {
   return (
-    <div className="grid gap-4 border-t border-foreground/5 bg-foreground/[0.02] px-4 py-4 md:grid-cols-3">
+    <div className="border-t border-foreground/5 bg-foreground/[0.02]">
+      <OrderInfo order={o} />
+      <PurchaseSection order={o} />
+    </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setDone(true);
+          setTimeout(() => setDone(false), 1500);
+        });
+      }}
+      className="inline-flex items-center gap-1 rounded border border-foreground/10 px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+    >
+      {done ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
+      {done ? 'Copiado' : 'Copiar'}
+    </button>
+  );
+}
+
+function JsonBlock({ title, value }: { title: string; value: unknown }) {
+  const text = JSON.stringify(value ?? null, null, 2);
+  return (
+    <div className="min-w-0">
+      <div className="mb-1 flex items-center justify-between gap-2">
+        <span className="text-[11px] text-muted-foreground">{title}</span>
+        <CopyButton text={text} />
+      </div>
+      <pre className="max-h-96 overflow-auto rounded-md border border-foreground/10 bg-background p-3 font-mono text-[11px] leading-relaxed text-foreground">
+        {text}
+      </pre>
+    </div>
+  );
+}
+
+const PURCHASE_STATUS: Record<string, { label: string; cls: string }> = {
+  sent: { label: 'Enviado', cls: 'text-success' },
+  failed: { label: 'Falhou', cls: 'text-destructive' },
+  pending: { label: 'Enviando', cls: 'text-warning' },
+};
+
+function PurchaseSection({ order: o }: { order: SaleOrder }) {
+  const { events, loading, error } = usePurchaseEvents(o.lineIds, true);
+
+  return (
+    <div className="space-y-3 border-t border-foreground/5 px-4 py-4">
+      <h3 className="text-xs font-medium">Purchase enviado à Meta</h3>
+      {loading ? (
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      ) : error ? (
+        <p className="text-xs text-destructive">{error}</p>
+      ) : !events || events.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          {o.status === 'approved'
+            ? 'Nenhum Purchase foi enviado para este pedido. Ele só sai quando a área tem o pixel e o token da API de Conversões configurados.'
+            : 'O Purchase só é enviado para vendas aprovadas.'}
+        </p>
+      ) : (
+        events.map((e) => <PurchaseEventView key={e.id} event={e} />)
+      )}
+    </div>
+  );
+}
+
+function PurchaseEventView({ event: e }: { event: PurchaseEvent }) {
+  const st = PURCHASE_STATUS[e.status] ?? { label: e.status, cls: 'text-muted-foreground' };
+  const when = e.sent_at ?? e.created_at;
+  return (
+    <div className="space-y-3">
+      <dl className="grid grid-cols-2 gap-2 md:grid-cols-5">
+        <div>
+          <dt className="text-[11px] text-muted-foreground">Status</dt>
+          <dd className={cn('text-xs font-medium', st.cls)}>{st.label}</dd>
+        </div>
+        <Field label={e.sent_at ? 'Enviado em' : 'Criado em'} value={format(new Date(when), "dd/MM/yyyy HH:mm:ss", { locale: ptBR })} />
+        <Field label="event_id" value={e.event_id} />
+        <Field label="fbtrace_id" value={e.fbtrace_id} />
+        <Field label="Tentativas" value={String(e.attempts ?? 0)} />
+      </dl>
+      {e.error && <p className="break-words text-xs text-destructive">{e.error}</p>}
+      <div className="grid gap-3 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <JsonBlock title="Evento enviado (dados pessoais em SHA-256)" value={e.payload} />
+        <JsonBlock title="Resposta do Meta" value={e.response} />
+      </div>
+    </div>
+  );
+}
+
+function OrderInfo({ order: o }: { order: SaleOrder }) {
+  return (
+    <div className="grid gap-4 px-4 py-4 md:grid-cols-3">
       <div className="space-y-2">
         <h3 className="text-xs font-medium">Produtos</h3>
         <ul className="space-y-1">

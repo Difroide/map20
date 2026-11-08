@@ -1,5 +1,5 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { IsIn, IsOptional, IsUUID } from 'class-validator';
+import { IsIn, IsOptional, IsUUID, Matches } from 'class-validator';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SupabaseService } from '../../shared/services/supabase.service';
@@ -28,6 +28,15 @@ class SalesQueryDto {
   @IsOptional()
   @IsIn(SALES_PERIODS as unknown as string[])
   period?: SalesPeriod;
+}
+
+class PurchaseQueryDto {
+  @IsUUID()
+  workspace_id!: string;
+
+  /** Ids das linhas do pedido, separados por vírgula (até 20). */
+  @Matches(/^[0-9a-f-]{36}(,[0-9a-f-]{36}){0,19}$/i)
+  sale_ids!: string;
 }
 
 /** A aba "Vendas": os pedidos que chegaram pelos webhooks dos checkouts. */
@@ -84,5 +93,24 @@ export class SalesController {
 
     const orders = buildOrders(rows, purchases, platforms);
     return { summary: summarize(orders), orders, truncated: rows.length >= MAX_ROWS };
+  }
+
+  /**
+   * O Purchase do pedido como foi enviado ao Meta: o evento (dados pessoais em
+   * SHA-256, IP e user agent em claro, como o Meta exige) e a resposta dele.
+   */
+  @Get('purchase')
+  async purchase(@CurrentUser('id') userId: string, @Query() q: PurchaseQueryDto) {
+    await this.debug.assertOwner(userId, q.workspace_id);
+    const { data, error } = await this.supabase
+      .getClient()
+      .from('capi_events')
+      .select('id, event_id, sale_id, status, attempts, payload, response, fbtrace_id, error, created_at, sent_at')
+      .eq('workspace_id', q.workspace_id)
+      .eq('event_name', 'Purchase')
+      .in('sale_id', q.sale_ids.split(','))
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(error.message);
+    return { events: data ?? [] };
   }
 }

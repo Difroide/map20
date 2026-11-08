@@ -8,6 +8,7 @@ export type PurchaseStatus = 'sent' | 'failed' | 'pending' | null;
 export interface SaleOrder {
   id: string;
   orderId: string;
+  lineIds: string[];
   soldAt: string;
   status: string;
   amount: number;
@@ -38,6 +39,33 @@ interface SalesResponse {
   summary: SalesSummary;
   orders: SaleOrder[];
   truncated: boolean;
+}
+
+export interface PurchaseEvent {
+  id: string;
+  event_id: string;
+  sale_id: string | null;
+  status: 'sent' | 'failed' | 'pending' | string;
+  attempts: number;
+  payload: unknown;
+  response: unknown;
+  fbtrace_id: string | null;
+  error: string | null;
+  created_at: string;
+  sent_at: string | null;
+}
+
+/** O Purchase do pedido como saiu para o Meta. Só busca com o detalhe aberto. */
+export function usePurchaseEvents(lineIds: string[], enabled: boolean) {
+  const { activeWorkspaceId } = useWorkspaceContext();
+  const ids = lineIds.slice(0, 20).join(',');
+  const query = useQuery<{ events: PurchaseEvent[] }, Error>({
+    queryKey: ['sale-purchase', activeWorkspaceId, ids],
+    enabled: enabled && !!activeWorkspaceId && !!ids,
+    retry: false,
+    queryFn: () => api.get(`/sales/purchase?workspace_id=${activeWorkspaceId}&sale_ids=${ids}`),
+  });
+  return { events: query.data?.events ?? null, loading: query.isLoading, error: query.error?.message ?? null };
 }
 
 /** Vendas da área no período. Atualiza sozinho a cada 30 segundos. */
