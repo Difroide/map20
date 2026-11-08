@@ -5,8 +5,7 @@ import { useToast } from '@/hooks/use-toast';
 import { CheckoutIntegration, CheckoutPlatform } from '@/types/checkout';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
 import { useQueryClient } from '@tanstack/react-query';
-
-const WEBHOOK_DOMAIN = 'https://api.sentinelatracker.com.br';
+import { absoluteApiUrl } from '@/lib/apiUrl';
 
 export interface SaveIntegrationParams {
   id?: string;
@@ -29,7 +28,9 @@ export function useCheckoutIntegrations() {
   const effectiveUserId = user?.id;
 
   const generateWebhookUrl = (platform: CheckoutPlatform): string => {
-    return `${WEBHOOK_DOMAIN}/webhook-${platform}`;
+    // O endereco deste painel, e nao um dominio fixo: o antigo apontava para a
+    // API de outro sistema, e a venda era entregue la em vez de aqui.
+    return `${absoluteApiUrl()}/webhooks/${platform}`;
   };
 
   const fetchIntegrations = useCallback(async () => {

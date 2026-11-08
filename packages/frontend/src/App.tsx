@@ -52,6 +52,7 @@ const ForgotPassword = lazyWithReload(() => import("./pages/ForgotPassword"));
 const ResetPassword = lazyWithReload(() => import("./pages/ResetPassword"));
 const Live = lazyWithReload(() => import("./pages/Live"));
 const Heatmap = lazyWithReload(() => import("./pages/Heatmap"));
+const Sales = lazyWithReload(() => import("./pages/Sales"));
 const Integrations = lazyWithReload(() => import("./pages/Integrations"));
 const Settings = lazyWithReload(() => import("./pages/Settings"));
 const Terms = lazyWithReload(() => import("./pages/Terms"));
@@ -107,6 +108,7 @@ const App = () => (
 
                   <Route path="/preview" element={<ProtectedRoute><Preview /></ProtectedRoute>} />
                   <Route path="/live" element={<ProtectedRoute><Live /></ProtectedRoute>} />
+                  <Route path="/sales" element={<ProtectedRoute><Sales /></ProtectedRoute>} />
                   <Route path="/heatmap" element={<ProtectedRoute><Heatmap /></ProtectedRoute>} />
                   <Route path="/integrations" element={<ProtectedRoute><Integrations /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
