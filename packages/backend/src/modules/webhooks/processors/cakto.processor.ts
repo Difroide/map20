@@ -126,7 +126,7 @@ export class CaktoProcessor {
       customer_country: 'BR',
       status,
       payment_method: data.paymentMethod || 'unknown',
-      currency: 'BRL',
+      currency: (data.currency || 'BRL').toUpperCase(),
       utm_source: utmSource,
       utm_medium: utmMedium,
       utm_campaign: utmCampaign,

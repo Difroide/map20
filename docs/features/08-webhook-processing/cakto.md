@@ -9,8 +9,7 @@ Processar notificacoes de vendas da plataforma Cakto, extraindo dados do cliente
 | Fonte | Campo |
 |-------|-------|
 | Headers genericos | `x-webhook-token`, `x-api-token`, `authorization-token` |
-| Body | `payload.token` |
-| Query param | `?token=` ou `?key=` |
+| Body | `payload.secret` (o que a Cakto envia), `payload.token` |
 
 O token e comparado com `webhook_secret` na tabela `checkout_integrations` onde `platform = 'cakto'` e `is_active = true`.
 

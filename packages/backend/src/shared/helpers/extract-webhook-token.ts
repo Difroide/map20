@@ -38,6 +38,11 @@ export function extractWebhookToken(
       // marcar a entrega como bem-sucedida enquanto a venda se perdia.
       if (req.headers['x-hubla-token']) return req.headers['x-hubla-token'] as string;
       break;
+    case 'cakto':
+      // A Cakto manda o token no campo "secret" do corpo, ao lado de
+      // "event" e "data". Sem este case o webhook era recusado com 401.
+      if (payload?.secret) return payload.secret;
+      break;
     case 'monetizze':
       if (req.headers['x-monetizze-token']) return req.headers['x-monetizze-token'] as string;
       if (req.headers['monetizze-token']) return req.headers['monetizze-token'] as string;
