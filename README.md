@@ -25,9 +25,9 @@ E um **modo preview** no estilo do GTM: abra o site pelo painel e veja, ao vivo,
 supabase/schema_completo.sql
 ```
 
-copie **tudo** (Ctrl+A, Ctrl+C), cole no editor e clique **Run**. Espere o `Success`. É uma vez só, num projeto novo e vazio — o arquivo cria as 22 tabelas, as regras de acesso e as rotinas de limpeza.
+copie **tudo** (Ctrl+A, Ctrl+C), cole no editor e clique **Run**. Espere o `Success`. É uma vez só, num projeto novo e vazio — o arquivo cria as tabelas, as regras de acesso e as rotinas de limpeza.
 
-> Deu erro porque o banco já tinha algo? Rode `supabase/reset.sql` e depois o `schema_completo.sql` de novo.
+> Deu erro porque o banco já tinha algo? O arquivo é para projeto vazio: crie um projeto novo no Supabase e rode nele.
 
 **1.3 Fechar o cadastro.** **Authentication** → **Sign In / Providers** → **Email**: desligue **Allow new users to sign up** e salve. Só quem você criar consegue entrar.
 
@@ -168,25 +168,13 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 
 ---
 
-## Já tem o painel no ar e está atualizando?
+## Mudou o banco?
 
-Não rode o `schema_completo.sql` nem a migration base: os dois são para banco vazio.
+O banco inteiro está num arquivo só, `supabase/schema_completo.sql`. Mudança no banco entra direto nele, no fim ou junto da tabela que muda.
 
-Em `supabase/migrations/`, a primeira migration (`20261002120000_base.sql`) é o banco inteiro até 2026-10-02. Toda mudança no banco depois disso vira uma migration nova, com data posterior. Para atualizar, rode no SQL Editor só as que vieram depois da última que você aplicou, em ordem de data.
-
-Vindo da versão com dashboard: rode `supabase/migrations/20261015120000_preview_debug.sql` (o modo preview). As tabelas do dashboard antigo (campanhas, financeiro, regras, planos…) ficam no banco sem uso; nada aqui as lê ou grava.
+Quem já tem o painel no ar não roda o arquivo de novo (ele é para banco vazio): roda no SQL Editor só o trecho novo. Por isso, escreva o trecho novo de forma que rode em banco existente (`ADD COLUMN IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`…).
 
 Depois, `git push` para a Vercel publicar o código novo.
-
-### Mudou o banco? Regere o schema
-
-Crie a migration nova em `supabase/migrations/` (nome `AAAAMMDDHHMMSS_o_que_muda.sql`) e rode:
-
-```bash
-node scripts/gerar-schema.js
-```
-
-Ele refaz o `supabase/schema_completo.sql` a partir das migrations. Não edite o schema à mão.
 
 ---
 
@@ -200,7 +188,7 @@ Ele refaz o `supabase/schema_completo.sql` a partir das migrations. Não edite o
 | Não aparece a aba de criar usuários | Seu e-mail não está em `ADMIN_EMAILS`. |
 | Domínio fica em *Invalid Configuration* | CNAME com nome ou valor errado, ou nuvem laranja no Cloudflare. |
 | "Esqueci minha senha" leva para outro endereço | Etapa 4.4 pendente. |
-| Preview diz "o banco ainda não tem o modo preview" | Rode `supabase/migrations/20261015120000_preview_debug.sql` no SQL Editor. |
+| Preview diz "o banco ainda não tem o modo preview" | Rode no SQL Editor o trecho `20261015120000_preview_debug.sql` do `schema_completo.sql`. |
 | Selo do preview diz "preview encerrado" | O preview foi desligado ou expirou. Clique **Abrir site em preview** de novo. |
 | Selo do preview não aparece | O snippet não está na página, ou o Do Not Track do navegador está ligado (o snippet não roda com ele). |
 | Aba Servidor vazia com o selo "conectado" | O `/collect` sai por `sendBeacon`; bloqueador de anúncio barra quando o snippet não está no seu subdomínio (Etapa 4). |
@@ -212,4 +200,4 @@ Ele refaz o `supabase/schema_completo.sql` a partir das migrations. Não edite o
 - [`docs/features/`](docs/features/README.md) — cada funcionalidade, com regras de negócio e testes
 - [`docs/features/20-preview/preview-debug.md`](docs/features/20-preview/preview-debug.md) — o modo preview, web e servidor
 - [`docs/features/18-visitor-tracking/meta-capi.md`](docs/features/18-visitor-tracking/meta-capi.md) — rastreio, API de Conversões e as plataformas de checkout
-- `supabase/migrations/` — o histórico do banco; `node scripts/gerar-schema.js` regenera o `schema_completo.sql` a partir delas
+- `supabase/schema_completo.sql` — o banco inteiro; cada trecho marca de qual migration original veio

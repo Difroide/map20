@@ -5,7 +5,7 @@
 > **Status:** Implementado — pendente de validacao com trafego real
 >
 > **Pendencias operacionais antes de funcionar:**
-> 1. Rodar `supabase/migrations/20260928000000_rastreio_de_visitantes.sql` (se ainda nao rodou) e depois `20260929000000_meta_capi.sql`
+> 1. Rodar `supabase/schema_completo.sql` num projeto novo (ja inclui os trechos `20260928000000_rastreio_de_visitantes.sql` e `20260929000000_meta_capi.sql`)
 > 2. Definir `CRON_SECRET` na Vercel (reenvio diario de falhas)
 > 3. No DNS do cliente: `CNAME track → cname.vercel-dns.com`; adicionar o subdominio no projeto da Vercel
 > 4. Em Integracoes: plataforma, subdominio (Verificar), pixel, token; colar o snippet na pagina
@@ -100,7 +100,7 @@ Manual, com trafego real:
 
 ## 8. Processor das plataformas dos containers
 
-> **Migration:** `supabase/migrations/20260929100000_plataformas_dos_containers.sql` (libera as 9 no CHECK de `checkout_integrations`)
+> **Migration:** trecho `20260929100000_plataformas_dos_containers.sql` do `supabase/schema_completo.sql` (libera as 9 no CHECK de `checkout_integrations`)
 > **Codigo:** `packages/backend/src/modules/webhooks/processors/generic/`
 
 Wiven, Frendz, Herospark, Kavoo, PagTrust, Assiny, Yampi, Wiapy e Doppus usam **um processor so**, dirigido pela tabela `checkout-specs.ts`: o que muda entre elas e onde cada campo mora no payload. O fluxo e o dos processors existentes — venda aprovada por `SalesService.upsertFromWebhook` (casamento com a visita e Purchase da CAPI vem dai), reembolso atualiza a venda existente e nunca cria linha.

@@ -23,6 +23,6 @@ Aba **Mapa de calor** (`/heatmap`): onde as pessoas clicam e até onde rolam a p
 
 ## Arquivos
 
-- `supabase/migrations/20261107130000_mapa_de_calor.sql`
+- `supabase/schema_completo.sql` (trecho `20261107130000_mapa_de_calor.sql`)
 - `packages/backend/src/modules/tracking/heatmap.ts` (validação e agregação), `heatmap.service.ts`, `heatmap.controller.ts`, `heatmap-script.ts`
 - `packages/frontend/src/pages/Heatmap.tsx`, `hooks/useHeatmap.ts`

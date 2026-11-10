@@ -5,7 +5,7 @@
 > **Status:** Implementado — pendente de validacao com trafego real
 >
 > **Pendencias operacionais antes de funcionar:**
-> 1. Rodar `supabase/migrations/20260928000000_rastreio_de_visitantes.sql` no SQL Editor
+> 1. Rodar `supabase/schema_completo.sql` no SQL Editor (trecho `20260928000000_rastreio_de_visitantes.sql`)
 > 2. Deploy normal (frontend + API na Vercel). Nenhuma variavel de ambiente nova
 > 3. Colar o snippet (Integracoes → Rastreio de visitantes) na pagina de vendas
 

@@ -282,7 +282,7 @@ export class DebugService {
 
   private migrationHint(message: string): string {
     return /debug_/.test(message)
-      ? 'O banco ainda não tem o modo preview: rode supabase/migrations/20261015120000_preview_debug.sql no SQL Editor.'
+      ? 'O banco ainda não tem o modo preview: rode no SQL Editor o trecho 20261015120000_preview_debug.sql do supabase/schema_completo.sql.'
       : message;
   }
 
