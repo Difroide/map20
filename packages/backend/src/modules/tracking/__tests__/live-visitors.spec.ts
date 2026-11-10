@@ -101,3 +101,52 @@ describe('buildLiveSnapshot', () => {
     expect(byId.c).toMatchObject({ utm: {}, clickId: null, adId: null });
   });
 });
+
+describe('buildLiveSnapshot — envios a Meta', () => {
+  const capi = (id: string, over: Record<string, unknown> = {}) => ({
+    id,
+    event_name: 'PageView',
+    session_id: 'a',
+    status: 'sent',
+    error: null,
+    created_at: ago(2),
+    sent_at: ago(2),
+    custom_data: null,
+    source_url: 'https://site.com/',
+    ...over,
+  });
+
+  it('lista os envios do mais novo ao mais antigo, com o pais do acesso', () => {
+    const snap = buildLiveSnapshot(
+      [session('a', { country: 'FR' })],
+      [],
+      NOW,
+      [
+        capi('1', { created_at: ago(5) }),
+        capi('2', { event_name: 'Purchase', status: 'failed', error: 'x', custom_data: { value: 28.99, currency: 'USD' } }),
+        capi('3', { session_id: null, event_name: 'Purchase', status: 'pending', created_at: ago(1) }),
+      ],
+    );
+    expect(snap.capi.map((c) => c.id)).toEqual(['3', '2', '1']);
+    expect(snap.capi[1]).toMatchObject({ eventName: 'Purchase', status: 'failed', value: 28.99, currency: 'USD', country: 'FR' });
+    expect(snap.capi[0].country).toBeNull();
+    expect(snap.capiSummary).toEqual({ sent: 1, failed: 1, pending: 1 });
+  });
+
+  it('agrupa por nome os eventos de cada acesso; uma falha marca o grupo', () => {
+    const snap = buildLiveSnapshot([session('a'), session('b')], [], NOW, [
+      capi('1'),
+      capi('2'),
+      capi('3', { event_name: 'InitiateCheckout', status: 'failed' }),
+      capi('4', { event_name: 'InitiateCheckout' }),
+    ]);
+    const a = snap.list.find((v) => v.sessionId === 'a')!;
+    expect(a.metaEvents).toEqual(
+      expect.arrayContaining([
+        { name: 'PageView', count: 2, status: 'sent' },
+        { name: 'InitiateCheckout', count: 2, status: 'failed' },
+      ]),
+    );
+    expect(snap.list.find((v) => v.sessionId === 'b')!.metaEvents).toEqual([]);
+  });
+});

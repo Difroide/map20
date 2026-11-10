@@ -5,6 +5,28 @@ import { api } from '@/lib/api';
 export const UTM_KEYS = ['source', 'medium', 'campaign', 'content', 'term'] as const;
 export type UtmKey = (typeof UTM_KEYS)[number];
 
+export type CapiStatus = 'sent' | 'failed' | 'pending';
+
+/** Um envio à CAPI da Meta. */
+export interface LiveCapiEvent {
+  id: string;
+  eventName: string;
+  status: CapiStatus;
+  error: string | null;
+  createdAt: string;
+  sessionId: string | null;
+  value: number | null;
+  currency: string | null;
+  page: string | null;
+  country: string | null;
+}
+
+export interface LiveMetaEvent {
+  name: string;
+  count: number;
+  status: CapiStatus;
+}
+
 export interface LiveVisit {
   sessionId: string;
   visitorId: string;
@@ -27,6 +49,8 @@ export interface LiveVisit {
   city: string | null;
   pageviews: number;
   checkoutClick: boolean;
+  /** Ausente quando o backend ainda é da versão anterior. */
+  metaEvents?: LiveMetaEvent[];
 }
 
 export interface LiveSnapshot {
@@ -34,6 +58,8 @@ export interface LiveSnapshot {
   visits: number;
   countries: { country: string | null; visits: number; online: number }[];
   list: LiveVisit[];
+  capi?: LiveCapiEvent[];
+  capiSummary?: { sent: number; failed: number; pending: number };
   generatedAt: string;
 }
 

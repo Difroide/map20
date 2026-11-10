@@ -5,7 +5,7 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { SupabaseService } from '../../shared/services/supabase.service';
 import { DebugService } from '../debug/debug.service';
-import { buildLiveSnapshot, LiveEventRow, LiveSessionRow, LiveSnapshot } from './live-visitors';
+import { buildLiveSnapshot, LiveCapiRow, LiveEventRow, LiveSessionRow, LiveSnapshot } from './live-visitors';
 
 /** A aba mostra quem teve atividade nesta janela. */
 const WINDOW_MS = 30 * 60_000;
@@ -15,6 +15,7 @@ const WINDOW_MS = 30 * 60_000;
  */
 const MAX_SESSION_AGE_MS = 12 * 60 * 60_000;
 const MAX_SESSIONS = 300;
+const MAX_CAPI = 200;
 
 class LiveQueryDto {
   @IsUUID()
@@ -43,6 +44,19 @@ export class TrackingLiveController {
     const since = new Date(now - WINDOW_MS).toISOString();
     const client = this.supabase.getClient();
 
+    // Os envios à Meta da janela, em paralelo com as sessões. Sem eles a aba
+    // ainda serve: um erro aqui não derruba o resto.
+    // (o builder só dispara no then; o Promise.resolve faz a busca sair já)
+    const capiQuery = Promise.resolve(client
+      .from('capi_events')
+      .select(
+        'id, event_name, session_id, status, error, created_at, sent_at, custom_data:payload->custom_data, source_url:payload->>event_source_url',
+      )
+      .eq('workspace_id', workspaceId)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(MAX_CAPI));
+
     const { data: sessions, error } = await client
       .from('tracking_sessions')
       .select(
@@ -70,6 +84,9 @@ export class TrackingLiveController {
       events = (data ?? []) as LiveEventRow[];
     }
 
-    return buildLiveSnapshot(rows, events, now);
+    const capi = await capiQuery;
+    const capiRows = capi.error ? [] : ((capi.data ?? []) as unknown as LiveCapiRow[]);
+
+    return buildLiveSnapshot(rows, events, now, capiRows);
   }
 }

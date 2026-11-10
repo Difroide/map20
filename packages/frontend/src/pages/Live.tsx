@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { formatDistanceToNowStrict } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { Loader2, Monitor, ShoppingCart, Smartphone, Tablet } from 'lucide-react';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { NoWorkspace } from '@/components/NoWorkspace';
 import { useWorkspaceContext } from '@/contexts/WorkspaceContext';
-import { UTM_KEYS, useLive, type LiveVisit } from '@/hooks/useLive';
+import { UTM_KEYS, useLive, type CapiStatus, type LiveCapiEvent, type LiveVisit } from '@/hooks/useLive';
 import { cn } from '@/lib/utils';
 
 const regionNames = (() => {
@@ -73,7 +73,7 @@ export default function Live() {
           <div>
             <h1 className="text-xl font-semibold text-foreground">Ao vivo</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Acessos dos últimos 30 minutos, atualizados a cada 5 segundos
+              Acessos e eventos enviados à Meta nos últimos 30 minutos, atualizados a cada 5 segundos
             </p>
           </div>
           {data && (
@@ -97,9 +97,19 @@ export default function Live() {
           <p className="text-sm text-destructive">{live.error}</p>
         ) : data ? (
           <>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <Stat label="Online agora" value={data.online} hint="Atividade nos últimos 5 minutos, sem ter saído da página" />
               <Stat label="Acessos em 30 min" value={data.visits} hint="Sessões com alguma atividade na última meia hora" />
+              <Stat
+                label="Enviados à Meta em 30 min"
+                value={data.capiSummary?.sent ?? 0}
+                hint="Eventos aceitos pela API de Conversões da Meta na última meia hora"
+                extra={
+                  data.capiSummary?.failed ? (
+                    <span className="text-xs text-destructive">{data.capiSummary.failed} com falha</span>
+                  ) : null
+                }
+              />
             </div>
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2.2fr)]">
@@ -130,6 +140,19 @@ export default function Live() {
                 )}
               </section>
             </div>
+
+            <section className="rounded-lg border border-foreground/10">
+              <h2 className="border-b border-foreground/5 px-4 py-3 text-sm font-medium">Eventos enviados à Meta</h2>
+              {!data.capi?.length ? (
+                <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+                  Nenhum evento enviado à Meta nos últimos 30 minutos.
+                </p>
+              ) : (
+                <ul className="divide-y divide-foreground/5">
+                  {data.capi.map((e) => <CapiRow key={e.id} event={e} />)}
+                </ul>
+              )}
+            </section>
             {live.error && <p className="text-xs text-destructive">{live.error}</p>}
           </>
         ) : null}
@@ -138,11 +161,88 @@ export default function Live() {
   );
 }
 
-function Stat({ label, value, hint }: { label: string; value: number; hint: string }) {
+function Stat({ label, value, hint, extra }: { label: string; value: number; hint: string; extra?: ReactNode }) {
   return (
     <div className="rounded-lg border border-foreground/10 p-4" title={hint}>
       <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+      <p className="mt-1 flex items-baseline gap-2">
+        <span className="text-2xl font-semibold tabular-nums">{value}</span>
+        {extra}
+      </p>
+    </div>
+  );
+}
+
+const STATUS_LABEL: Record<CapiStatus, string> = {
+  sent: 'Enviado',
+  failed: 'Falhou',
+  pending: 'Enviando',
+};
+
+const STATUS_CLASS: Record<CapiStatus, string> = {
+  sent: 'bg-success/10 text-success',
+  failed: 'bg-destructive/10 text-destructive',
+  pending: 'bg-warning/10 text-warning',
+};
+
+function money(value: number, currency: string | null): string {
+  try {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: currency || 'BRL' }).format(value);
+  } catch {
+    return `${value} ${currency ?? ''}`.trim();
+  }
+}
+
+/** Um evento que saiu para a API de Conversões. */
+function CapiRow({ event: e }: { event: LiveCapiEvent }) {
+  return (
+    <li className="flex items-start gap-3 px-4 py-2.5 text-sm">
+      <span className={cn('mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-[11px]', STATUS_CLASS[e.status])}>
+        {STATUS_LABEL[e.status]}
+      </span>
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="font-medium">{e.eventName}</span>
+          {e.value != null && <span className="tabular-nums">{money(e.value, e.currency)}</span>}
+          {e.country && (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <Flag code={e.country} />
+              {countryName(e.country)}
+            </span>
+          )}
+          {!e.sessionId && <span className="text-xs text-muted-foreground">sem sessão do site</span>}
+        </div>
+        {e.page && (
+          <p className="truncate text-xs text-muted-foreground" title={e.page}>
+            {pagePath(e.page)}
+          </p>
+        )}
+        {e.error && (
+          <p className="break-words text-xs text-destructive" title={e.error}>
+            {e.error}
+          </p>
+        )}
+      </div>
+      <span className="shrink-0 text-xs text-muted-foreground">{ago(e.createdAt)}</span>
+    </li>
+  );
+}
+
+/** Os eventos deste acesso que foram para a Meta. */
+function MetaChips({ visit: v }: { visit: LiveVisit }) {
+  if (!v.metaEvents?.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {v.metaEvents.map((m) => (
+        <span
+          key={m.name}
+          className={cn('rounded px-1.5 py-0.5 text-[11px]', STATUS_CLASS[m.status])}
+          title={`${m.name} enviado à Meta ${m.count}x — ${STATUS_LABEL[m.status].toLowerCase()}`}
+        >
+          Meta: {m.name}
+          {m.count > 1 && ` ×${m.count}`}
+        </span>
+      ))}
     </div>
   );
 }
@@ -215,6 +315,7 @@ function VisitRow({ visit: v }: { visit: LiveVisit }) {
           {Object.keys(v.utm).length === 0 && v.source && ` · veio de ${v.source}`}
         </p>
         <UtmChips visit={v} />
+        <MetaChips visit={v} />
       </div>
       <span className="shrink-0 text-right text-xs text-muted-foreground">
         {v.online ? 'agora' : v.exited ? 'saiu' : 'inativo'}

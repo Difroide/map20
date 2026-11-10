@@ -39,6 +39,43 @@ export interface LiveEventRow {
   occurred_at: string;
 }
 
+/** Um envio à CAPI, como está em capi_events. */
+export interface LiveCapiRow {
+  id: string;
+  event_name: string;
+  session_id: string | null;
+  status: string;
+  error: string | null;
+  created_at: string;
+  sent_at: string | null;
+  custom_data: { value?: number; currency?: string } | null;
+  source_url: string | null;
+}
+
+export type CapiStatus = 'sent' | 'failed' | 'pending';
+
+export interface LiveCapiEvent {
+  id: string;
+  eventName: string;
+  status: CapiStatus;
+  error: string | null;
+  createdAt: string;
+  sessionId: string | null;
+  value: number | null;
+  currency: string | null;
+  page: string | null;
+  /** Do acesso que gerou o evento, quando ele está na janela da aba. */
+  country: string | null;
+}
+
+/** Os eventos de um acesso que foram para a Meta, agrupados pelo nome. */
+export interface LiveMetaEvent {
+  name: string;
+  count: number;
+  /** failed se algum falhou; pending se algum ainda está saindo; senão sent. */
+  status: CapiStatus;
+}
+
 export interface LiveVisit {
   sessionId: string;
   visitorId: string;
@@ -61,6 +98,7 @@ export interface LiveVisit {
   city: string | null;
   pageviews: number;
   checkoutClick: boolean;
+  metaEvents: LiveMetaEvent[];
 }
 
 export interface LiveSnapshot {
@@ -68,10 +106,38 @@ export interface LiveSnapshot {
   visits: number;
   countries: { country: string | null; visits: number; online: number }[];
   list: LiveVisit[];
+  /** Envios à Meta na janela, do mais novo para o mais antigo. */
+  capi: LiveCapiEvent[];
+  capiSummary: { sent: number; failed: number; pending: number };
   generatedAt: string;
 }
 
-export function buildLiveSnapshot(sessions: LiveSessionRow[], events: LiveEventRow[], now = Date.now()): LiveSnapshot {
+function capiStatus(status: string): CapiStatus {
+  return status === 'sent' ? 'sent' : status === 'failed' ? 'failed' : 'pending';
+}
+
+export function buildLiveSnapshot(
+  sessions: LiveSessionRow[],
+  events: LiveEventRow[],
+  now = Date.now(),
+  capiRows: LiveCapiRow[] = [],
+): LiveSnapshot {
+  const capiSorted = [...capiRows].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const metaBySession = new Map<string, Map<string, LiveMetaEvent>>();
+  for (const c of capiSorted) {
+    if (!c.session_id) continue;
+    const byName = metaBySession.get(c.session_id) ?? new Map<string, LiveMetaEvent>();
+    const status = capiStatus(c.status);
+    const entry = byName.get(c.event_name);
+    if (!entry) {
+      byName.set(c.event_name, { name: c.event_name, count: 1, status });
+    } else {
+      entry.count += 1;
+      if (status === 'failed' || (status === 'pending' && entry.status === 'sent')) entry.status = status;
+    }
+    metaBySession.set(c.session_id, byName);
+  }
+
   // Eventos do mais novo para o mais antigo: o primeiro visto é o último da sessão.
   const sorted = [...events].sort((a, b) => b.occurred_at.localeCompare(a.occurred_at));
   const lastEvent = new Map<string, LiveEventRow>();
@@ -109,9 +175,12 @@ export function buildLiveSnapshot(sessions: LiveSessionRow[], events: LiveEventR
         city: s.city,
         pageviews: s.pageviews,
         checkoutClick: s.had_checkout_click,
+        metaEvents: [...(metaBySession.get(s.session_id)?.values() ?? [])],
       };
     })
     .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
+
+  const countryBySession = new Map(sessions.map((s) => [s.session_id, s.country]));
 
   const byCountry = new Map<string | null, { visits: number; online: number }>();
   for (const v of list) {
@@ -128,6 +197,26 @@ export function buildLiveSnapshot(sessions: LiveSessionRow[], events: LiveEventR
       .map(([country, c]) => ({ country, ...c }))
       .sort((a, b) => b.online - a.online || b.visits - a.visits),
     list,
+    capi: capiSorted.map((c): LiveCapiEvent => {
+      const value = Number(c.custom_data?.value);
+      return {
+        id: c.id,
+        eventName: c.event_name,
+        status: capiStatus(c.status),
+        error: c.error,
+        createdAt: c.created_at,
+        sessionId: c.session_id,
+        value: Number.isFinite(value) && c.custom_data?.value != null ? value : null,
+        currency: c.custom_data?.currency ?? null,
+        page: c.source_url,
+        country: (c.session_id && countryBySession.get(c.session_id)) || null,
+      };
+    }),
+    capiSummary: {
+      sent: capiSorted.filter((c) => capiStatus(c.status) === 'sent').length,
+      failed: capiSorted.filter((c) => capiStatus(c.status) === 'failed').length,
+      pending: capiSorted.filter((c) => capiStatus(c.status) === 'pending').length,
+    },
     generatedAt: new Date(now).toISOString(),
   };
 }
