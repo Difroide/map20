@@ -18,8 +18,9 @@ const TEST_TOKEN = 'test-webhook-token-2026';
 function createMockSupabase(overrides: Record<string, any> = {}) {
   const chainable: any = {};
   const methods = [
-    'from', 'select', 'eq', 'filter', 'insert', 'upsert', 'update',
-    'single', 'maybeSingle', 'limit', 'order', 'lte',
+    'from', 'select', 'eq', 'neq', 'filter', 'insert', 'upsert', 'update',
+    'single', 'maybeSingle', 'limit', 'order', 'lte', 'in', 'is', 'not',
+    'delete', 'or', 'match', 'range',
   ];
   for (const m of methods) {
     chainable[m] = jest.fn().mockReturnValue(chainable);
@@ -37,6 +38,10 @@ function createMockSupabase(overrides: Record<string, any> = {}) {
   };
   chainable.single.mockResolvedValue(integrationResult);
   chainable.maybeSingle.mockResolvedValue(integrationResult);
+  // Make chainable thenable so plain `await client.from().select().eq()` resolves
+  // to { data: [], error: null } instead of the chainable object itself.
+  chainable.then = (resolve: any, reject: any) =>
+    Promise.resolve({ data: [], error: null }).then(resolve, reject);
   return chainable;
 }
 
@@ -110,7 +115,7 @@ describe('HublaProcessor', () => {
           {
             id: 'prod-001',
             name: 'Curso de Marketing',
-            offers: [{ id: 'offer-001', name: 'Principal' }],
+            offers: [{ id: 'offer-001', name: 'Principal', amountCents: 9900 }],
           },
         ],
         invoice: {
@@ -171,7 +176,7 @@ describe('HublaProcessor', () => {
 
     expect(saleData.user_id).toBe(TEST_USER_ID);
     expect(saleData.workspace_id).toBe(TEST_WORKSPACE_ID);
-    expect(saleData.external_id).toBe('inv-hubla-12345');
+    expect(saleData.external_id).toBe('inv-hubla-12345:offer-001');
     expect(saleData.amount).toBe(99); // 9900 centavos / 100
     expect(saleData.customer_name).toBe('Maria Silva');
     expect(saleData.customer_email).toBe('maria@test.com');
@@ -235,12 +240,16 @@ describe('HublaProcessor', () => {
   });
 
   it('should process a refund webhook (refund_request.accepted)', async () => {
-    // Integration lookup uses .single() (defaulted to integration data by createMockSupabase).
-    // The refund path does .maybeSingle() to find the existing approved sale by external_id.
-    mockClient.maybeSingle.mockResolvedValueOnce({
-      data: { id: 'sale-hubla-existing', status: 'approved' },
-      error: null,
-    });
+    // The refund lookup does plain `await client.from('sales').select().eq().eq()` — no .single().
+    // Override chainable.then so the first plain-await resolves to the existing sales rows,
+    // and all subsequent plain-awaits (update queries) return empty results.
+    mockClient.then = jest.fn()
+      .mockImplementationOnce((resolve: any) =>
+        Promise.resolve({ data: [{ id: 'sale-hubla-existing', status: 'approved' }], error: null }).then(resolve),
+      )
+      .mockImplementation((resolve: any) =>
+        Promise.resolve({ data: null, error: null }).then(resolve),
+      );
 
     const payload = {
       type: 'refund_request.accepted',

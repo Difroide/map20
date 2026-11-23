@@ -12,22 +12,22 @@ function service(env: Record<string, string | undefined>) {
 }
 
 describe('EncryptionService', () => {
-  it('sem ENCRYPTION_KEY, usa a service role e cifra/decifra normalmente', () => {
-    const svc = service({ SUPABASE_SERVICE_ROLE_KEY: 'service-role-xyz' });
+  it('sem ENCRYPTION_KEY, usa o JWT_SECRET e cifra/decifra normalmente', () => {
+    const svc = service({ JWT_SECRET: 'jwt-secret-xyz' });
     const cifrado = svc.encrypt('EAAB-token-do-meta');
     expect(cifrado).not.toContain('EAAB');
     expect(svc.decrypt(cifrado)).toBe('EAAB-token-do-meta');
   });
 
   it('com ENCRYPTION_KEY, ela vence — e o texto cifrado com uma nao abre com a outra', () => {
-    const comChave = service({ ENCRYPTION_KEY: 'a'.repeat(64), SUPABASE_SERVICE_ROLE_KEY: 'service-role-xyz' });
-    const semChave = service({ SUPABASE_SERVICE_ROLE_KEY: 'service-role-xyz' });
+    const comChave = service({ ENCRYPTION_KEY: 'a'.repeat(64), JWT_SECRET: 'jwt-secret-xyz' });
+    const semChave = service({ JWT_SECRET: 'jwt-secret-xyz' });
     const cifrado = comChave.encrypt('segredo');
     expect(comChave.decrypt(cifrado)).toBe('segredo');
     expect(() => semChave.decrypt(cifrado)).toThrow();
   });
 
   it('sem nenhuma das duas, recusa subir', () => {
-    expect(() => service({})).toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
+    expect(() => service({})).toThrow(/JWT_SECRET/);
   });
 });

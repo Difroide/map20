@@ -43,13 +43,8 @@ export class UsersService {
     const email = dto.email.trim().toLowerCase();
     const name = dto.name.trim();
 
-    const { data, error } = await this.supabase.getClient().auth.admin.createUser({
-      email,
-      password: dto.password,
-      // Sem envio de e-mail de confirmacao: o admin entrega a senha em maos.
-      email_confirm: true,
-      user_metadata: { name },
-    });
+    // Sem envio de e-mail de confirmacao: o admin entrega a senha em maos.
+    const { user, error } = await this.supabase.createUser(email, dto.password, { name });
 
     if (error) {
       if (
@@ -63,17 +58,17 @@ export class UsersService {
       throw new BadRequestException(error.message);
     }
 
-    if (!data?.user) {
+    if (!user) {
       throw new BadRequestException('Nao foi possivel criar o usuario');
     }
 
     // O gatilho handle_new_user cria o perfil e a area. Ele roda dentro do
     // INSERT em auth.users, entao a linha ja existe quando chegamos aqui.
     return {
-      user_id: data.user.id,
+      user_id: user.id,
       name,
       email,
-      created_at: data.user.created_at,
+      created_at: user.created_at ?? new Date().toISOString(),
       active: true,
     };
   }

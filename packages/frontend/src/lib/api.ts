@@ -1,4 +1,4 @@
-import { supabase } from '@/integrations/supabase/client';
+import { getToken } from './authClient';
 import { API_URL } from './apiUrl';
 
 
@@ -26,8 +26,7 @@ function notifyPlanLimit(detail: any): void {
 // ---------------------------------------------------------------------------
 
 async function getAuthHeaders(includeContentType: boolean): Promise<Record<string, string>> {
-  const { data } = await supabase.auth.getSession();
-  const token = data?.session?.access_token;
+  const token = getToken();
   return {
     ...(includeContentType ? { 'Content-Type': 'application/json' } : {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),

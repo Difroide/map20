@@ -1,4 +1,30 @@
 import { Body, Controller, Get, Logger, Post, Query, Req, Res } from '@nestjs/common';
+
+/** Gera a página de redirecionamento para WhatsApp com o snippet do MAP embutido. */
+function buildWhatsAppRedirectHtml(waUrl: string, trackerSrc: string | null): string {
+  const destJson = JSON.stringify(waUrl);
+  const destAttr = waUrl.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+  const trackerHtml = trackerSrc
+    ? `<script>window.sentinel=function(){(window.sentinel.q=window.sentinel.q||[]).push(arguments)};</script>\n` +
+      `<script async src="${trackerSrc.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"></script>\n` +
+      `<script>sentinel('checkout',${destJson});</script>`
+    : `<script>location.href=${destJson};</script>`;
+
+  return `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="3;url=${destAttr}">
+<title>Redirecionando...</title>
+<style>body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,sans-serif;background:#f0fdf4}p{color:#166534;font-size:1.1rem}</style>
+</head>
+<body>
+<p>Redirecionando para o WhatsApp...</p>
+${trackerHtml}
+</body>
+</html>`;
+}
 import { SkipThrottle } from '@nestjs/throttler';
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { TrackingIngestService } from './tracking-ingest.service';
@@ -266,6 +292,47 @@ export class TrackingCollectController {
     res.header('Access-Control-Allow-Origin', '*');
     res.header('Cache-Control', 'no-store');
     res.status(200).send({ ok: true, service: 'sentinela-tracking' });
+  }
+
+  /**
+   * Página de redirecionamento para anúncios de WhatsApp.
+   *
+   * Uso no Facebook Ads — URL de destino do anúncio:
+   *   https://track.seudominio.com.br/api/t/r?tid=WORKSPACE_ID&to=5511999999999&text=Olá
+   *
+   * O snippet captura fbclid + UTMs, dispara PageView e InitiateCheckout na
+   * CAPI do Meta, e redireciona para o WhatsApp. Sem JS, o meta-refresh garante
+   * o redirecionamento mesmo assim.
+   *
+   * Parâmetros:
+   *   tid  — workspace ID (UUID do painel MAP)
+   *   to   — número WhatsApp com DDI, só dígitos (ex: 5511999999999)
+   *   text — mensagem pré-preenchida (opcional, não precisa de encode manual)
+   */
+  @Get('r')
+  whatsappRedirect(
+    @Query('tid') tid: string | undefined,
+    @Query('to') to: string | undefined,
+    @Query('text') text: string | undefined,
+    @Req() req: FastifyRequest,
+    @Res() res: FastifyReply,
+  ): void {
+    const workspaceId = UUID.test(tid?.trim() ?? '') ? tid!.trim().toLowerCase() : null;
+    const phone = (to ?? '').replace(/\D/g, '');
+    const waText = text?.trim() ?? '';
+
+    const waUrl = phone
+      ? `https://wa.me/${phone}${waText ? `?text=${encodeURIComponent(waText)}` : ''}`
+      : 'https://wa.me';
+
+    const trackerSrc = workspaceId
+      ? `${this.collectUrl(req).replace('/collect', '/tracker.js')}?tid=${workspaceId}`
+      : null;
+
+    res.header('Content-Type', 'text/html; charset=utf-8');
+    res.header('Cache-Control', 'no-store, no-cache');
+    res.header('X-Frame-Options', 'DENY');
+    res.status(200).send(buildWhatsAppRedirectHtml(waUrl, trackerSrc));
   }
 
   private webEvents(

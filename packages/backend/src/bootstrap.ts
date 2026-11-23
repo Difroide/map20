@@ -36,14 +36,20 @@ export async function createApp(): Promise<NestFastifyApplication> {
 
   const fastify = app.getHttpAdapter().getInstance();
 
-  fastify.addHook('onSend', (_request: any, reply: any, _payload: any, done: () => void) => {
+  fastify.addHook('onSend', (request: any, reply: any, _payload: any, done: () => void) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
     reply.header('X-XSS-Protection', '1; mode=block');
     reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     reply.header('X-Permitted-Cross-Domain-Policies', 'none');
-    reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
     reply.header('Referrer-Policy', 'strict-origin-when-cross-origin');
+    // A CSP fechada é só para as respostas da API. No Coolify o mesmo fastify
+    // também serve o painel (HTML/JS), que precisa carregar os próprios
+    // assets — na Vercel esses arquivos nem passavam por aqui.
+    const url: string = request?.raw?.url ?? request?.url ?? '';
+    if (url.startsWith('/api') || url.startsWith('/health')) {
+      reply.header('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
+    }
     done();
   });
 

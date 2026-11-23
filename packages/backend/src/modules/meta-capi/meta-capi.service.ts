@@ -687,7 +687,7 @@ function purchaseUserInput(sale: any, session: any, withSession: any): UserDataI
     ip: session?.ip_address ?? null,
     userAgent: session?.user_agent ?? null,
     fbp: session?.fbp ?? null,
-    fbc: session?.fbc ?? null,
+    fbc: session?.fbc ?? sale.metadata?.fbc ?? null,
   };
 }
 

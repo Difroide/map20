@@ -8,10 +8,12 @@ import { WebhooksModule } from './modules/webhooks/webhooks.module';
 import { WorkspacesModule } from './modules/workspaces/workspaces.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { HealthModule } from './modules/health/health.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { TrackingModule } from './modules/tracking/tracking.module';
 import { MetaCapiModule } from './modules/meta-capi/meta-capi.module';
 import { DebugModule } from './modules/debug/debug.module';
+import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 
 const RATE_LIMIT_TTL_MS = 60_000;
 const RATE_LIMIT_MAX_REQUESTS = 60;
@@ -33,10 +35,12 @@ const RATE_LIMIT_MAX_REQUESTS = 60;
     WorkspacesModule,
     IntegrationsModule,
     HealthModule,
+    AuthModule,
     UsersModule,
     TrackingModule,
     MetaCapiModule,
     DebugModule,
+    WhatsappModule,
   ],
   providers: [
     {

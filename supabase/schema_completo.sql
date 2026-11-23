@@ -1045,9 +1045,16 @@ ALTER TABLE public.webhook_queue ENABLE ROW LEVEL SECURITY;
 -- >>>>>>>>>>>>>>>>>>>> 20260317151748_01387a93-8ec8-40a5-a750-181c8a30cee8.sql <<<<<<<<<<<<<<<<<<<<
 
 
--- Enable required extensions for scheduled jobs
-CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
-CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
+-- Enable required extensions for scheduled jobs.
+-- Guardado: num Postgres puro (Coolify) as extensoes nao existem e os
+-- expurgos rodam no backend via @nestjs/schedule (retention.service.ts).
+DO $$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA pg_catalog;
+  CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pg_cron/pg_net indisponiveis (%).', SQLERRM;
+END $$;
 
 
 -- >>>>>>>>>>>>>>>>>>>> 20260330110000_schema_drift_backfill.sql <<<<<<<<<<<<<<<<<<<<
@@ -4859,6 +4866,8 @@ BEGIN
   ALTER PUBLICATION supabase_realtime ADD TABLE public.gtm_events;
 EXCEPTION
   WHEN duplicate_object THEN NULL;
+  -- Postgres puro: a publication do Realtime nao existe e nada a usa.
+  WHEN undefined_object THEN NULL;
 END $$;
 
 -- ============================================================
@@ -4936,15 +4945,20 @@ GRANT EXECUTE ON FUNCTION public.gtm_visit_metrics(uuid, uuid, timestamptz, time
 -- Uses the BRIN index on created_at. PageView is the highest-volume event
 -- stored, so this job is the only thing keeping the table bounded.
 
-CREATE EXTENSION IF NOT EXISTS pg_cron;
-
 -- cron.schedule upserts by job name, so re-running this migration reschedules
--- the existing job instead of creating a duplicate.
-SELECT cron.schedule(
-  'gtm-events-retention',
-  '0 4 * * *',
-  $$DELETE FROM public.gtm_events WHERE created_at < now() - interval '30 days'$$
-);
+-- the existing job instead of creating a duplicate. Guardado: sem pg_cron
+-- (Postgres puro) o expurgo roda no backend (retention.service.ts).
+DO $outer$
+BEGIN
+  CREATE EXTENSION IF NOT EXISTS pg_cron;
+  PERFORM cron.schedule(
+    'gtm-events-retention',
+    '0 4 * * *',
+    $$DELETE FROM public.gtm_events WHERE created_at < now() - interval '30 days'$$
+  );
+EXCEPTION WHEN OTHERS THEN
+  RAISE NOTICE 'pg_cron indisponivel, expurgo nao agendado (%).', SQLERRM;
+END $outer$;
 
 
 -- >>>>>>>>>>>>>>>>>>>> 20260805120000_gtm_events_visit_number.sql <<<<<<<<<<<<<<<<<<<<

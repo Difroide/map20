@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MetaCapiService } from './meta-capi.service';
+import { MetaCapiRetryCron } from './meta-capi-retry.cron';
 import { MetaCapiController, MetaCapiCronController } from './meta-capi.controller';
 
 /**
@@ -9,7 +10,7 @@ import { MetaCapiController, MetaCapiCronController } from './meta-capi.controll
  */
 @Module({
   controllers: [MetaCapiController, MetaCapiCronController],
-  providers: [MetaCapiService],
+  providers: [MetaCapiService, MetaCapiRetryCron],
   exports: [MetaCapiService],
 })
 export class MetaCapiModule {}

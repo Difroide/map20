@@ -49,7 +49,6 @@ import Preview from "./pages/Preview";
 
 // Lazy-load secondary routes
 const ForgotPassword = lazyWithReload(() => import("./pages/ForgotPassword"));
-const ResetPassword = lazyWithReload(() => import("./pages/ResetPassword"));
 const Live = lazyWithReload(() => import("./pages/Live"));
 const Heatmap = lazyWithReload(() => import("./pages/Heatmap"));
 const Sales = lazyWithReload(() => import("./pages/Sales"));
@@ -102,7 +101,8 @@ const App = () => (
                   {/* Nao ha cadastro publico: as contas nascem em Configuracoes > Usuarios. */}
                   <Route path="/register" element={<Navigate to="/login" replace />} />
                   <Route path="/forgot-password" element={<ForgotPassword />} />
-                  <Route path="/reset-password" element={<ResetPassword />} />
+                  {/* O reset por link de e-mail saiu com o Supabase Auth. */}
+                  <Route path="/reset-password" element={<Navigate to="/forgot-password" replace />} />
                   <Route path="/terms" element={<Terms />} />
                   <Route path="/privacy" element={<Privacy />} />
 

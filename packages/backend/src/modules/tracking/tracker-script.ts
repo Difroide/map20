@@ -77,7 +77,7 @@ const SOURCE = `(function (w, d) {
 
   var YEAR = 31536000, SESSION = 1800, UTM_TTL = 604800, FB_TTL = 7776000, DBG_TTL = 3600;
   var PARAMS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'fbclid', 'gclid', 'ad_id'];
-  var CHECKOUT = /(hotmart|kiwify|kirvano|perfectpay|payt|cakto|hub\\.la|hubla|ticto|cartpanda|ggcheckout|lastlink|eduzz|mundpay|monetizze|greenn|clkdmg|digitalmanager|assiny|doppus|frendz|herospark|kavoo|pagtrust|wiapy|wiven|yampi|checkout)/i;
+  var CHECKOUT = /(hotmart|kiwify|kirvano|perfectpay|payt|cakto|hub\\.la|hubla|ticto|cartpanda|ggcheckout|lastlink|eduzz|mundpay|monetizze|greenn|clkdmg|digitalmanager|assiny|doppus|frendz|herospark|kavoo|pagtrust|wiapy|wiven|yampi|checkout|wa\\.me|api\\.whatsapp\\.com)/i;
   var CHECKOUT_SUB = /^(pay|payment|seguro|secure|checkout|compra|comprar|pagamento)\\./i;
   var URL_IN_TEXT = /https?:\\/\\/[^\\s'"<>()]+/g;
   var URL_ATTRS = ['onclick', 'data-href', 'data-url', 'data-link', 'formaction'];
@@ -493,7 +493,21 @@ const SOURCE = `(function (w, d) {
     return false;
   }
 
+  function decorateWa(href) {
+    if (href.indexOf('wa.me') < 0 && href.indexOf('api.whatsapp.com') < 0) return null;
+    var stlToken = 'stl_' + sid;
+    if (href.indexOf('stl_') >= 0) return href;
+    var textMatch = href.match(/([?&]text=)([^&#]*)/);
+    if (textMatch) {
+      var decoded = decodeURIComponent(textMatch[2]);
+      return href.replace(textMatch[0], textMatch[1] + encodeURIComponent(decoded + ' ' + stlToken));
+    }
+    return href + (href.indexOf('?') >= 0 ? '&' : '?') + 'text=' + encodeURIComponent(stlToken);
+  }
+
   function decorateUrl(href) {
+    var wa = decorateWa(href);
+    if (wa !== null) return wa;
     var add = [], pairs = arrival ? arrival.split('&') : [], i, k, xc = utmXcod();
     href = setParam(href, 'stl_' + sid, true);
     if (xc && !hasKey(href, 'xcod')) add.push('xcod=' + encodeURIComponent(xc));

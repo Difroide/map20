@@ -4,10 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from '@/hooks/use-toast';
-import { supabase } from '@/integrations/supabase/client';
+import { apiChangePassword } from '@/lib/authClient';
 import { useAuth } from '@/contexts/AuthContext';
 
-/** Troca de senha direto no Supabase Auth: a sessão do próprio usuário basta. */
+/** Troca de senha no /api/auth: a sessão do próprio usuário basta. */
 export function PasswordCard() {
   const { user } = useAuth();
   const [password, setPassword] = useState('');
@@ -19,12 +19,14 @@ export function PasswordCard() {
 
   const salvar = async () => {
     setSaving(true);
-    const { error } = await supabase.auth.updateUser({ password });
-    setSaving(false);
-    if (error) {
-      toast({ title: 'Não foi possível trocar a senha', description: error.message, variant: 'destructive' });
+    try {
+      await apiChangePassword(password);
+    } catch (error: any) {
+      setSaving(false);
+      toast({ title: 'Não foi possível trocar a senha', description: error?.message, variant: 'destructive' });
       return;
     }
+    setSaving(false);
     setPassword('');
     setConfirm('');
     toast({ title: 'Senha alterada' });
